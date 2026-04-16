@@ -157,7 +157,7 @@ def run_readiness_checks(
         # Backup validation (optional temp archive)
         if with_backup:
             backup_service = BackupService(paths, schema_version=database.schema_version, sync_protocol_version=SYNC_PROTOCOL_VERSION)
-            with TemporaryDirectory(prefix="recipe_forge_release_check_") as tmp_dir:
+            with TemporaryDirectory(prefix="genesis_release_check_") as tmp_dir:
                 backup_path = Path(tmp_dir) / "readiness_backup.zip"
                 created = backup_service.create_backup(backup_path)
                 if created.total_bytes <= 0:

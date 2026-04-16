@@ -11,7 +11,7 @@ from desktop.app.services.media_service import MediaService
 def _runtime_paths(tmp_path: Path) -> RuntimePaths:
     return RuntimePaths(
         app_data_root=tmp_path / "appdata",
-        db_path=tmp_path / "appdata" / "data" / "recipe_forge.db",
+        db_path=tmp_path / "appdata" / "data" / "genesis.db",
         media_root=tmp_path / "appdata" / "media",
         logs_dir=tmp_path / "appdata" / "logs",
         backups_dir=tmp_path / "appdata" / "backups",

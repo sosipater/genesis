@@ -1,2 +1,2 @@
-"""Recipe Forge desktop package root."""
+"""Genesis desktop package root."""
 

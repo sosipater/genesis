@@ -37,7 +37,7 @@ def _services(project_root: Path):
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Recipe Forge desktop operational tools")
+    parser = argparse.ArgumentParser(description="Genesis desktop operational tools")
     parser.add_argument("--project-root", default=str(Path(__file__).resolve().parents[1]))
     sub = parser.add_subparsers(dest="command", required=True)
 

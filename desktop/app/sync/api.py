@@ -29,7 +29,7 @@ def create_app(root: Path | None = None, db_path: Path | None = None) -> FastAPI
         enable_file_logging=config.logging["file_enabled"],
         logs_dir=runtime_paths.logs_dir,
     )
-    logger = logging.getLogger("recipe_forge.startup")
+    logger = logging.getLogger("genesis.startup")
     logger.info("Desktop sync host starting", extra={"subsystem": "startup"})
 
     database = Database(db_path or runtime_paths.db_path)
@@ -38,14 +38,14 @@ def create_app(root: Path | None = None, db_path: Path | None = None) -> FastAPI
     sync_schema = json.loads((project_root / "shared" / "schemas" / "sync_envelope.schema.json").read_text(encoding="utf-8"))
     sync_validator = Draft202012Validator(sync_schema)
 
-    app = FastAPI(title="Recipe Forge Desktop Sync Host", version=APP_VERSION)
+    app = FastAPI(title="Genesis Desktop Sync Host", version=APP_VERSION)
     app.state.database = database
 
     @app.get("/health")
     def health() -> dict[str, Any]:
         return {
             "status": "ok",
-            "app": "recipe-forge-desktop-sync-host",
+            "app": "genesis-desktop-sync-host",
             "schema_version": database.schema_version,
             "sync_protocol_version": config.sync["protocol_version"],
             "timestamp": utc_now_iso(),
@@ -87,7 +87,7 @@ def _check_protocol_version(envelope: dict[str, Any], expected_version: int) -> 
 
 
 def _log_request(direction: str, envelope: dict[str, Any]) -> None:
-    logging.getLogger("recipe_forge.sync").info(
+    logging.getLogger("genesis.sync").info(
         f"Sync {direction} request",
         extra={
             "subsystem": "sync",

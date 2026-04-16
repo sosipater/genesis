@@ -25,7 +25,7 @@ def run_desktop_app(root: Path) -> int:
         enable_file_logging=config.logging["file_enabled"],
         logs_dir=runtime_paths.logs_dir,
     )
-    logging.getLogger("recipe_forge.startup").info("Desktop authoring app starting", extra={"subsystem": "startup"})
+    logging.getLogger("genesis.startup").info("Desktop authoring app starting", extra={"subsystem": "startup"})
 
     app = QApplication.instance() or QApplication([])
     app.setStyleSheet(

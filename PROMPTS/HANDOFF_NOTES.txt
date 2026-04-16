@@ -1,4 +1,4 @@
-Recipe Forge Handoff Notes
+Genesis Handoff Notes
 
 Current baseline:
 - Architecture, data model, sync protocol, packaging strategy, UX guidance, diagnostics, test strategy, and roadmap docs are present in `docs/`.

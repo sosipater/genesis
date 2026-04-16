@@ -43,7 +43,7 @@ class MainWindow(QMainWindow):
         self._state = EditorState()
         self._current_recipe: Recipe | None = None
         self._current_grocery_list_id: str | None = None
-        self.setWindowTitle(f"Recipe Forge - Desktop Authoring v{APP_VERSION}")
+        self.setWindowTitle(f"Genesis - Desktop Authoring v{APP_VERSION}")
         self.resize(1500, 900)
         self._build_ui()
         self._wire_signals()
@@ -738,7 +738,7 @@ class MainWindow(QMainWindow):
         self._refresh_library()
 
     def _on_create_backup(self) -> None:
-        default_name = f"recipe_forge_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        default_name = f"genesis_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
         path_text, ok = QInputDialog.getText(
             self,
             "Create Backup",
@@ -806,7 +806,7 @@ class MainWindow(QMainWindow):
         report = self._editor_service.diagnostics_report()
         QMessageBox.information(
             self,
-            "About Recipe Forge",
+            "About Genesis",
             (
                 f"App: {APP_ID}\n"
                 f"Version: {APP_VERSION}\n"

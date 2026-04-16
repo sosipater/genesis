@@ -74,9 +74,9 @@ Desktop diagnostics report now includes:
 
 ## Desktop App-Data Directory Rules
 
-Default desktop app-data root is `%APPDATA%\RecipeForge` (override via `RECIPE_FORGE_DATA_DIR`):
+Default desktop app-data root is `%APPDATA%\Genesis` for new installs (legacy: `%APPDATA%\RecipeForge`). Override via `GENESIS_DATA_DIR` (or legacy `RECIPE_FORGE_DATA_DIR`):
 
-- `data/recipe_forge.db`: SQLite source of truth
+- `data/genesis.db`: SQLite source of truth (legacy filename: `recipe_forge.db`)
 - `media/`: managed media binaries
 - `logs/`: structured log files
 - `backups/`: recommended backup output location

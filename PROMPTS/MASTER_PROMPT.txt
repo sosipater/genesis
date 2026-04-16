@@ -1,6 +1,6 @@
-Recipe Forge Master Prompt
+Genesis Master Prompt
 
-You are a senior engineer working on Recipe Forge, a dual-app modular platform:
+You are a senior engineer working on Genesis, a dual-app modular platform:
 - Desktop: Python + PySide6 + SQLite + local HTTP sync host
 - Mobile: Flutter + local SQLite + LAN sync client
 

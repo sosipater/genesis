@@ -15,7 +15,7 @@ from desktop.app.sync.api import create_app
 
 def _install_crash_logging() -> None:
     def _handle_exception(exc_type, exc_value, exc_traceback) -> None:
-        logging.getLogger("recipe_forge.crash").exception(
+        logging.getLogger("genesis.crash").exception(
             "Unhandled exception",
             exc_info=(exc_type, exc_value, exc_traceback),
             extra={"subsystem": "startup"},
@@ -37,7 +37,7 @@ def main() -> int:
         try:
             return run_desktop_app(project_root)
         except Exception as exc:
-            logging.getLogger("recipe_forge.startup").exception(
+            logging.getLogger("genesis.startup").exception(
                 "Desktop startup failed",
                 extra={"subsystem": "startup"},
             )

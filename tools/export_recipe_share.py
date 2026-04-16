@@ -20,7 +20,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--recipe-id", action="append", required=True, help="Local recipe ID to export (repeatable)")
     parser.add_argument("--output", required=True, help="Output package path")
-    parser.add_argument("--db-path", default=str(ROOT / "desktop" / "data" / "recipe_forge.db"), help="SQLite DB path")
+    parser.add_argument("--db-path", default=str(ROOT / "desktop" / "data" / "genesis.db"), help="SQLite DB path")
     args = parser.parse_args()
 
     database = Database(Path(args.db_path))

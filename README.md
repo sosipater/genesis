@@ -1,8 +1,8 @@
-# Recipe Forge
+# Genesis
 
 **Repository**: [github.com/sosipater/genesis](https://github.com/sosipater/genesis)
 
-Recipe Forge is a dual-app, offline-first system for structured recipe authoring and guided cooking:
+Genesis is a dual-app, offline-first system for structured recipe authoring and guided cooking:
 
 - **Desktop (Windows 11, Python + PySide6)**: primary authoring environment, local sync host, content packaging/export toolchain.
 - **Mobile (Android, Flutter)**: primary cooking/runtime environment, LAN sync client, practical editing support.
@@ -22,7 +22,7 @@ The project is built around durable foundations:
 - `bundled_content/`: app-shipped content package + manifest.
 - `tools/`: validation, export, seed, and sync diagnostics scripts.
 - `desktop/`: desktop app source, tests, scripts.
-- `mobile/`: Flutter app project.
+- `mobile/`: Flutter app project (`genesis_mobile`).
 - `tests/`: cross-app integration and contract tests.
 
 ## Initial Priorities
@@ -48,21 +48,23 @@ From the repository root:
 - `.\desktop.ps1 media-scan`
 - `.\desktop.ps1 release-check`
 - `.\desktop.ps1 release-check -WithBackup -WithTests -VerboseReport`
-- `.\desktop.ps1 backup .\backup\recipe_forge_backup.zip`
-- `.\desktop.ps1 validate-backup .\backup\recipe_forge_backup.zip`
-- `.\desktop.ps1 restore .\backup\recipe_forge_backup.zip -AllowReplace`
+- `.\desktop.ps1 backup .\backup\genesis_backup.zip`
+- `.\desktop.ps1 validate-backup .\backup\genesis_backup.zip`
+- `.\desktop.ps1 restore .\backup\genesis_backup.zip -AllowReplace`
 
 ## Desktop Operational Data
 
-Desktop runtime data defaults to:
+Desktop runtime data defaults to `%APPDATA%\Genesis\` (new installs). If `%APPDATA%\RecipeForge\` or `~/.recipe_forge` already exists from an older build, that location is still used until you migrate.
 
-- `%APPDATA%\RecipeForge\data\recipe_forge.db`
-- `%APPDATA%\RecipeForge\media\...`
-- `%APPDATA%\RecipeForge\logs\...`
-- `%APPDATA%\RecipeForge\backups\...`
-- `%APPDATA%\RecipeForge\config\preferences.json`
+Typical layout:
 
-Override base path with `RECIPE_FORGE_DATA_DIR`.
+- `%APPDATA%\Genesis\data\genesis.db` (SQLite; legacy file may be `recipe_forge.db`)
+- `%APPDATA%\Genesis\media\...`
+- `%APPDATA%\Genesis\logs\...`
+- `%APPDATA%\Genesis\backups\...`
+- `%APPDATA%\Genesis\config\preferences.json`
+
+Override the base path with `GENESIS_DATA_DIR`. The older variable `RECIPE_FORGE_DATA_DIR` is still honored for compatibility.
 
 ## Packaging and Install (Practical Baseline)
 
@@ -97,10 +99,9 @@ Mobile (Android):
 
 ## Clone and first-time setup
 
-1. Clone: `git clone https://github.com/sosipater/genesis.git` (or SSH equivalent).
+1. Clone into a short path, e.g. `git clone https://github.com/sosipater/genesis.git genesis` (or SSH equivalent).
 2. **Desktop**: Python 3.12+. From the repo root: `pip install -e ".[dev]"` (see `pyproject.toml` for runtime + pytest deps).
-3. **Mobile**: `cd mobile/recipe_forge_mobile` and run `flutter pub get` (regenerates local `.dart_tool/`; not committed).
+3. **Mobile**: `cd mobile/genesis_mobile` and run `flutter pub get` (regenerates local `.dart_tool/`; not committed).
 4. Run tests: `.\desktop.ps1 test` and `.\mobile.ps1 test` from repo root when scripts exist.
 
 Do not commit `.pytest_cache/`, `__pycache__/`, or `.dart_tool/`; they are listed in the root `.gitignore`.
-

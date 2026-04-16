@@ -33,7 +33,7 @@ def test_main_window_smoke(tmp_path: Path) -> None:
         repo.create_recipe(recipe)
         service = EditorService(repo, FakeBundledLoader(), root)
         window = MainWindow(service)
-        assert window.windowTitle().startswith("Recipe Forge")
+        assert window.windowTitle().startswith("Genesis")
         window.close()
     finally:
         db.close()

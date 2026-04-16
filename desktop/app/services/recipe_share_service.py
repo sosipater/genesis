@@ -69,7 +69,7 @@ class RecipeShareService:
             "share_format_version": 1,
             "package_id": package_id,
             "exported_at_utc": utc_now_iso(),
-            "source_app": "recipe-forge-desktop",
+            "source_app": "genesis-desktop",
             "media_included": False,
             "recipes": [recipe.to_dict() for recipe in sorted(selected, key=lambda value: value.id)],
         }

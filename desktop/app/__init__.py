@@ -1,2 +1,2 @@
-"""Recipe Forge desktop application package."""
+"""Genesis desktop application package."""
 

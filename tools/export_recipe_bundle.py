@@ -18,7 +18,7 @@ from desktop.app.services.bundle_export_service import BundleExportService
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--content-version", required=True, help="App bundled content version")
-    parser.add_argument("--db-path", default=str(ROOT / "desktop" / "data" / "recipe_forge.db"), help="Local sqlite db path")
+    parser.add_argument("--db-path", default=str(ROOT / "desktop" / "data" / "genesis.db"), help="Local sqlite db path")
     args = parser.parse_args()
     database = Database(Path(args.db_path))
     try:

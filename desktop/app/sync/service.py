@@ -16,7 +16,7 @@ class SyncService:
         self._conn = conn
         self._repo = RecipeRepository(conn)
         self._protocol_version = protocol_version
-        self._logger = logging.getLogger("recipe_forge.sync")
+        self._logger = logging.getLogger("genesis.sync")
 
     def status(self) -> dict[str, Any]:
         queued = self._conn.execute(

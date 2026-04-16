@@ -49,7 +49,7 @@ def main() -> int:
     bundled_cmd.add_argument("--v2-file", required=True)
 
     local_origin_cmd = sub.add_parser("local-vs-origin", help="Diff local fork recipe against bundled origin")
-    local_origin_cmd.add_argument("--db-path", default=str(ROOT / "desktop" / "data" / "recipe_forge.db"))
+    local_origin_cmd.add_argument("--db-path", default=str(ROOT / "desktop" / "data" / "genesis.db"))
     local_origin_cmd.add_argument("--recipe-id", required=True)
     local_origin_cmd.add_argument("--project-root", default=str(ROOT))
 

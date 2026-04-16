@@ -1,4 +1,4 @@
-"""Typed domain entities for Recipe Forge desktop foundation."""
+"""Typed domain entities for Genesis desktop foundation."""
 
 from __future__ import annotations
 

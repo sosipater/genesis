@@ -20,7 +20,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, help="Input share package path")
     parser.add_argument("--source-label", default=None, help="Optional import source label")
-    parser.add_argument("--db-path", default=str(ROOT / "desktop" / "data" / "recipe_forge.db"), help="SQLite DB path")
+    parser.add_argument("--db-path", default=str(ROOT / "desktop" / "data" / "genesis.db"), help="SQLite DB path")
     args = parser.parse_args()
 
     database = Database(Path(args.db_path))

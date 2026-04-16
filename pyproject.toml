@@ -1,7 +1,7 @@
 [project]
-name = "recipe-forge"
+name = "genesis"
 version = "0.1.0"
-description = "Recipe Forge desktop/shared tooling monorepo foundation"
+description = "Genesis desktop/shared tooling monorepo foundation"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

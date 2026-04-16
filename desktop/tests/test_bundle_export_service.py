@@ -33,7 +33,7 @@ def test_bundle_export_workflow_and_versioning(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    db = Database(project / "desktop" / "data" / "recipe_forge.db")
+    db = Database(project / "desktop" / "data" / "genesis.db")
     try:
         repo = RecipeRepository(db.conn)
         recipe = _load_sample_recipe(root)
@@ -82,7 +82,7 @@ def test_export_rejects_duplicate_bundled_ids(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    db = Database(project / "desktop" / "data" / "recipe_forge.db")
+    db = Database(project / "desktop" / "data" / "genesis.db")
     try:
         repo = RecipeRepository(db.conn)
         recipe1 = _load_sample_recipe(root)

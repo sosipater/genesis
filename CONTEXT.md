@@ -1,8 +1,8 @@
-# Recipe Forge Context
+# Genesis Context
 
 ## What This App Is
 
-Recipe Forge is a structured recipe platform, not a freeform notes app. A recipe is a graph of linked entities (recipe metadata, equipment, ingredients, steps, links, timers, media) that supports both creation and guided execution.
+Genesis is a structured recipe platform, not a freeform notes app. A recipe is a graph of linked entities (recipe metadata, equipment, ingredients, steps, links, timers, media) that supports both creation and guided execution.
 
 Desktop is optimized for authoring; mobile is optimized for cooking flow.
 

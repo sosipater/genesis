@@ -2,7 +2,7 @@
 
 ## High-Level System
 
-Recipe Forge is a dual-app monorepo with shared contracts. The public Git remote for this codebase is [github.com/sosipater/genesis](https://github.com/sosipater/genesis).
+Genesis is a dual-app monorepo with shared contracts. The public Git remote for this codebase is [github.com/sosipater/genesis](https://github.com/sosipater/genesis).
 
 - **Desktop app**: Authoring UI + local SQLite + local HTTP sync host + export tooling.
 - **Mobile app**: Cooking UI + local SQLite + LAN sync client.

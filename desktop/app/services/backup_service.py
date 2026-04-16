@@ -52,7 +52,7 @@ class BackupService:
             total_bytes += len(data)
 
         if self._paths.db_path.exists():
-            add_file(self._paths.db_path, "data/recipe_forge.db")
+            add_file(self._paths.db_path, "data/genesis.db")
         for file_path in _collect_files(self._paths.media_root):
             rel = file_path.relative_to(self._paths.media_root).as_posix()
             add_file(file_path, f"media/{rel}")
@@ -122,7 +122,7 @@ class BackupService:
             return {"ok": False, "errors": ["Target installation is not empty. Re-run with allow_replace=true."]}
 
         with zipfile.ZipFile(backup_path, "r") as archive:
-            with TemporaryDirectory(prefix="recipe_forge_restore_") as temp_root:
+            with TemporaryDirectory(prefix="genesis_restore_") as temp_root:
                 temp_dir = Path(temp_root)
                 archive.extractall(temp_dir)
                 manifest = json.loads((temp_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -152,7 +152,9 @@ class BackupService:
                         self._paths.prefs_path.unlink()
                     self._paths.ensure_dirs()
 
-                db_src = temp_dir / "data" / "recipe_forge.db"
+                db_src = temp_dir / "data" / "genesis.db"
+                if not db_src.exists():
+                    db_src = temp_dir / "data" / "recipe_forge.db"
                 if db_src.exists():
                     self._paths.db_path.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(db_src, self._paths.db_path)

@@ -1,6 +1,6 @@
 # Vision
 
-Recipe Forge delivers a serious, maintainable cooking platform with two coordinated experiences:
+Genesis delivers a serious, maintainable cooking platform with two coordinated experiences:
 
 - **Desktop-first authoring** for rich structured recipe construction.
 - **Mobile-first execution** for practical, low-friction guided cooking.
