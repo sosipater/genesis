@@ -32,6 +32,26 @@ class RecipeEditorController extends ChangeNotifier {
   RecipeDetail? get recipe => _draft;
   bool get canEdit => (_draft?.scope ?? "local") == "local";
 
+  Future<List<GlobalEquipmentSummary>> listGlobalEquipmentForPicker() {
+    return _repository.listGlobalEquipmentForPicker();
+  }
+
+  Future<List<CatalogIngredientSummary>> searchCatalogIngredients(String query) {
+    return _repository.searchCatalogIngredients(query);
+  }
+
+  Future<List<RecipeSummary>> listLocalRecipesForSubRecipePicker() {
+    final RecipeDetail? current = _draft;
+    if (current == null) {
+      return Future<List<RecipeSummary>>.value(const <RecipeSummary>[]);
+    }
+    return _repository.listLocalRecipesForSubRecipePicker(excludeRecipeId: current.id);
+  }
+
+  Future<String> createCatalogIngredientRecord({required String name, String? notes}) {
+    return _repository.createCatalogIngredientRecord(name: name, notes: notes);
+  }
+
   Future<void> createNew() async {
     loading = true;
     error = null;
@@ -131,6 +151,7 @@ class RecipeEditorController extends ChangeNotifier {
     int? prepMinutes,
     int? cookMinutes,
     int? totalMinutes,
+    List<String>? tags,
   }) {
     final RecipeDetail? current = _draft;
     if (current == null || !canEdit) {
@@ -152,6 +173,7 @@ class RecipeEditorController extends ChangeNotifier {
       cookMinutes: cookMinutes,
       totalMinutes: totalMinutes,
       coverMediaId: current.coverMediaId,
+      tags: tags ?? current.tags,
       equipment: current.equipment,
       ingredients: current.ingredients,
       steps: current.steps,
@@ -166,6 +188,7 @@ class RecipeEditorController extends ChangeNotifier {
     String? notes,
     String? affiliateUrl,
     bool isRequired = true,
+    String? globalEquipmentId,
   }) {
     final RecipeDetail? current = _draft;
     if (current == null || !canEdit) {
@@ -181,11 +204,47 @@ class RecipeEditorController extends ChangeNotifier {
         notes: _nullable(notes),
         affiliateUrl: _nullable(affiliateUrl),
         mediaId: null,
+        globalEquipmentId: globalEquipmentId,
         isRequired: isRequired,
         displayOrder: current.equipment.length,
       ),
     ];
     _updateRecipe(current, equipment: next);
+  }
+
+  Future<void> addEquipmentFromGlobalSummary(GlobalEquipmentSummary ge, {bool isRequired = true}) async {
+    final RecipeDetail? current = _draft;
+    if (current == null || !canEdit) {
+      return;
+    }
+    final List<RecipeEquipmentItem> next = <RecipeEquipmentItem>[
+      ...current.equipment,
+      RecipeEquipmentItem(
+        id: _uuid.v4(),
+        recipeId: current.id,
+        name: ge.name,
+        description: null,
+        notes: ge.notes,
+        affiliateUrl: null,
+        mediaId: ge.mediaId,
+        globalEquipmentId: ge.id,
+        isRequired: isRequired,
+        displayOrder: current.equipment.length,
+      ),
+    ];
+    _updateRecipe(current, equipment: next);
+  }
+
+  Future<void> createGlobalEquipmentAndAdd({required String name, String? notes, bool isRequired = true}) async {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    final String id = await _repository.createGlobalEquipmentRecord(name: trimmed, notes: notes);
+    await addEquipmentFromGlobalSummary(
+      GlobalEquipmentSummary(id: id, name: trimmed, notes: notes),
+      isRequired: isRequired,
+    );
   }
 
   void updateEquipment(
@@ -211,6 +270,7 @@ class RecipeEditorController extends ChangeNotifier {
                   notes: _nullable(notes),
                   affiliateUrl: _nullable(affiliateUrl),
                   mediaId: item.mediaId,
+                  globalEquipmentId: item.globalEquipmentId,
                   isRequired: isRequired,
                   displayOrder: item.displayOrder,
                 )
@@ -254,11 +314,18 @@ class RecipeEditorController extends ChangeNotifier {
     String? substitutions,
     String? preparationNotes,
     bool isOptional = false,
+    String? catalogIngredientId,
+    String? subRecipeId,
+    String? subRecipeUsageType,
+    double? subRecipeMultiplier,
+    String? subRecipeDisplayName,
   }) {
     final RecipeDetail? current = _draft;
     if (current == null || !canEdit) {
       return;
     }
+    final String? subId =
+        (subRecipeId == null || subRecipeId.trim().isEmpty) ? null : subRecipeId.trim();
     final List<RecipeIngredientItem> next = <RecipeIngredientItem>[
       ...current.ingredients,
       RecipeIngredientItem(
@@ -273,6 +340,11 @@ class RecipeEditorController extends ChangeNotifier {
         mediaId: null,
         isOptional: isOptional,
         displayOrder: current.ingredients.length,
+        catalogIngredientId: subId != null ? null : catalogIngredientId,
+        subRecipeId: subId,
+        subRecipeUsageType: subId != null ? subRecipeUsageType : null,
+        subRecipeMultiplier: subId != null ? subRecipeMultiplier : null,
+        subRecipeDisplayName: subId != null ? subRecipeDisplayName : null,
       ),
     ];
     _updateRecipe(current, ingredients: next);
@@ -287,11 +359,18 @@ class RecipeEditorController extends ChangeNotifier {
     String? substitutions,
     String? preparationNotes,
     required bool isOptional,
+    String? catalogIngredientId,
+    String? subRecipeId,
+    String? subRecipeUsageType,
+    double? subRecipeMultiplier,
+    String? subRecipeDisplayName,
   }) {
     final RecipeDetail? current = _draft;
     if (current == null || !canEdit) {
       return;
     }
+    final String? subId =
+        (subRecipeId == null || subRecipeId.trim().isEmpty) ? null : subRecipeId.trim();
     final List<RecipeIngredientItem> next = current.ingredients
         .map(
           (RecipeIngredientItem item) => item.id == ingredientId
@@ -307,6 +386,11 @@ class RecipeEditorController extends ChangeNotifier {
                   mediaId: item.mediaId,
                   isOptional: isOptional,
                   displayOrder: item.displayOrder,
+                  catalogIngredientId: subId != null ? null : (catalogIngredientId ?? item.catalogIngredientId),
+                  subRecipeId: subId,
+                  subRecipeUsageType: subId != null ? subRecipeUsageType : null,
+                  subRecipeMultiplier: subId != null ? subRecipeMultiplier : null,
+                  subRecipeDisplayName: subId != null ? subRecipeDisplayName : null,
                 )
               : item,
         )
@@ -530,6 +614,7 @@ class RecipeEditorController extends ChangeNotifier {
     required int durationSeconds,
     bool autoStart = false,
     String? alertSoundKey,
+    bool alertVibrate = false,
   }) {
     final RecipeDetail? current = _draft;
     if (current == null || !canEdit) {
@@ -556,6 +641,7 @@ class RecipeEditorController extends ChangeNotifier {
                       durationSeconds: durationSeconds,
                       autoStart: autoStart,
                       alertSoundKey: _nullable(alertSoundKey),
+                      alertVibrate: alertVibrate,
                     ),
                   ],
                 )
@@ -572,6 +658,7 @@ class RecipeEditorController extends ChangeNotifier {
     required int durationSeconds,
     required bool autoStart,
     String? alertSoundKey,
+    bool alertVibrate = false,
   }) {
     final RecipeDetail? current = _draft;
     if (current == null || !canEdit) {
@@ -599,6 +686,7 @@ class RecipeEditorController extends ChangeNotifier {
                                 durationSeconds: durationSeconds,
                                 autoStart: autoStart,
                                 alertSoundKey: _nullable(alertSoundKey),
+                                alertVibrate: alertVibrate,
                               )
                             : timer,
                       )
@@ -661,6 +749,7 @@ class RecipeEditorController extends ChangeNotifier {
       cookMinutes: current.cookMinutes,
       totalMinutes: current.totalMinutes,
       coverMediaId: asset.id,
+      tags: current.tags,
       equipment: current.equipment,
       ingredients: current.ingredients,
       steps: current.steps,
@@ -693,6 +782,7 @@ class RecipeEditorController extends ChangeNotifier {
       cookMinutes: current.cookMinutes,
       totalMinutes: current.totalMinutes,
       coverMediaId: null,
+      tags: current.tags,
       equipment: current.equipment,
       ingredients: current.ingredients,
       steps: current.steps,
@@ -768,6 +858,7 @@ class RecipeEditorController extends ChangeNotifier {
     List<RecipeIngredientItem>? ingredients,
     List<RecipeStep>? steps,
     List<StepLink>? stepLinks,
+    List<String>? tags,
   }) {
     _draft = RecipeDetail(
       id: current.id,
@@ -785,6 +876,7 @@ class RecipeEditorController extends ChangeNotifier {
       cookMinutes: current.cookMinutes,
       totalMinutes: current.totalMinutes,
       coverMediaId: current.coverMediaId,
+      tags: tags ?? current.tags,
       equipment: equipment ?? current.equipment,
       ingredients: ingredients ?? current.ingredients,
       steps: steps ?? current.steps,

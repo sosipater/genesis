@@ -41,7 +41,7 @@ Share packages do **not** become bundled content automatically.
 4. Tool emits bundled recipe JSON files under `bundled_content/recipes/`.
 5. Tool computes checksums and writes deterministic `bundled_content/manifest.json`.
 6. Local recipe metadata is updated with export provenance fields (without changing ownership semantics).
-5. Package is shipped in a release.
+7. Package is shipped in a release.
 
 Desktop export surfaces success/failure and keeps standard recipe editing separate from package generation.
 
@@ -126,6 +126,7 @@ Format goals:
 - stable IDs are preserved inside package payload
 - bundled recipes are not exported as user-owned bundled content
 - recipes with media attachments are currently rejected for share export (explicit error; no silent media drop)
+- **Sub-recipe closure**: exporting one or more selected recipes **automatically includes every locally present recipe** reachable via `sub_recipe_id` on ingredient lines (transitive closure). Export fails deterministically if any referenced id is missing from the local database. The consumer always receives a self-contained package for those references (no silent broken links).
 
 ## Share Import Rules
 
@@ -137,6 +138,7 @@ Format goals:
   - repeated import of same package recipe is skipped via import provenance key
   - collisions are reported in import summary
 - packages that contain media references are currently rejected (media transport deferred)
+- **Sub-recipe integrity**: after parsing all valid recipes in a package, import **aborts the whole package** if any ingredient references a `sub_recipe_id` that is **not** among the recipe ids in that same file. Cross-package references are not supported in v1 share format. On success, every recipe in the batch is cloned with **new** local ids and **ingredient `sub_recipe_id` values remapped** to those new ids so intra-package links stay valid.
 
 ## Media Sync / Packaging Decision (Current Phase)
 

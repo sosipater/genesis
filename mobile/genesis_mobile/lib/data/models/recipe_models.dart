@@ -2,6 +2,7 @@ class RecipeSummary {
   final String id;
   final String title;
   final String? subtitle;
+  final String? author;
   final String scope; // local | bundled
   final String status;
   final String? updatedAt;
@@ -11,6 +12,9 @@ class RecipeSummary {
   final int openCount;
   final int cookCount;
   final String? coverMediaId;
+  final List<String> tags;
+  /// Optional subtle hint when the library query matched outside the title (e.g. Ingredient · Tag).
+  final String? searchMatchHint;
 
   const RecipeSummary({
     required this.id,
@@ -18,6 +22,7 @@ class RecipeSummary {
     required this.scope,
     required this.status,
     this.subtitle,
+    this.author,
     this.updatedAt,
     this.isFavorite = false,
     this.lastOpenedAt,
@@ -25,6 +30,8 @@ class RecipeSummary {
     this.openCount = 0,
     this.cookCount = 0,
     this.coverMediaId,
+    this.tags = const <String>[],
+    this.searchMatchHint,
   });
 }
 
@@ -150,6 +157,34 @@ class GroceryListItem {
   });
 }
 
+/// Library row for reusable ingredients (synced with desktop `catalog_ingredient`).
+class CatalogIngredientSummary {
+  final String id;
+  final String name;
+  final String? notes;
+
+  const CatalogIngredientSummary({
+    required this.id,
+    required this.name,
+    this.notes,
+  });
+}
+
+/// Library row for reusable equipment (synced with desktop `global_equipment`).
+class GlobalEquipmentSummary {
+  final String id;
+  final String name;
+  final String? notes;
+  final String? mediaId;
+
+  const GlobalEquipmentSummary({
+    required this.id,
+    required this.name,
+    this.notes,
+    this.mediaId,
+  });
+}
+
 class RecipeEquipmentItem {
   final String id;
   final String recipeId;
@@ -160,6 +195,8 @@ class RecipeEquipmentItem {
   final bool isRequired;
   final int displayOrder;
   final String? mediaId;
+  /// Optional link to a row in `global_equipment` when picked from the shared pool.
+  final String? globalEquipmentId;
 
   const RecipeEquipmentItem({
     required this.id,
@@ -171,6 +208,7 @@ class RecipeEquipmentItem {
     this.notes,
     this.affiliateUrl,
     this.mediaId,
+    this.globalEquipmentId,
   });
 }
 
@@ -186,6 +224,13 @@ class RecipeIngredientItem {
   final bool isOptional;
   final int displayOrder;
   final String? mediaId;
+  /// Optional link to [CatalogIngredientSummary] when picked from the shared library.
+  final String? catalogIngredientId;
+  /// Optional reference to another recipe as a component (sub-recipe).
+  final String? subRecipeId;
+  final String? subRecipeUsageType;
+  final double? subRecipeMultiplier;
+  final String? subRecipeDisplayName;
 
   const RecipeIngredientItem({
     required this.id,
@@ -199,6 +244,11 @@ class RecipeIngredientItem {
     this.substitutions,
     this.preparationNotes,
     this.mediaId,
+    this.catalogIngredientId,
+    this.subRecipeId,
+    this.subRecipeUsageType,
+    this.subRecipeMultiplier,
+    this.subRecipeDisplayName,
   });
 }
 
@@ -229,6 +279,7 @@ class StepTimer {
   final int durationSeconds;
   final bool autoStart;
   final String? alertSoundKey;
+  final bool alertVibrate;
 
   const StepTimer({
     required this.id,
@@ -237,6 +288,7 @@ class StepTimer {
     required this.durationSeconds,
     required this.autoStart,
     this.alertSoundKey,
+    this.alertVibrate = false,
   });
 }
 
@@ -306,6 +358,8 @@ class RecipeDetail {
   final int? cookMinutes;
   final int? totalMinutes;
   final String? coverMediaId;
+  /// Portable tag names (mirrors desktop `tags_json` / recipe payload `tags`).
+  final List<String> tags;
   final List<RecipeEquipmentItem> equipment;
   final List<RecipeIngredientItem> ingredients;
   final List<RecipeStep> steps;
@@ -320,6 +374,7 @@ class RecipeDetail {
     required this.ingredients,
     required this.steps,
     this.stepLinks = const [],
+    this.tags = const <String>[],
     this.subtitle,
     this.author,
     this.sourceName,

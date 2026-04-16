@@ -50,6 +50,7 @@ Supported mutable local entity types in current baseline (desktop host apply + c
 - `step_link`
 - `step_timer`
 - `global_equipment` (user equipment library; refinement phase)
+- `catalog_ingredient` (user ingredient identity library; optional link from `recipe_ingredients`)
 - `tag` (normalized tags; refinement phase)
 - `collection`
 - `collection_item`
@@ -62,7 +63,7 @@ Supported mutable local entity types in current baseline (desktop host apply + c
 
 External sync remains JSON envelope based; internal host mapping targets normalized SQLite tables.
 
-Recipe payloads continue to embed the full graph (`equipment`, `ingredients`, `steps`, `step_links`); child entity types allow incremental push/pull rows when clients send typed changes.
+Recipe payloads continue to embed the full graph (`equipment`, `ingredients`, `steps`, `step_links`); child entity types allow incremental push/pull rows when clients send typed changes. Ingredient objects may include optional **sub-recipe** fields (`sub_recipe_id`, `sub_recipe_usage_type`, `sub_recipe_multiplier`, `sub_recipe_display_name`) carried in the same JSON shape as desktop `Recipe.to_dict()` / mobile `_recipeToSyncBody`.
 
 ## Conflict Strategy (MVP Default)
 
@@ -95,9 +96,9 @@ Conflict handling path is explicit in host behavior:
 Mobile client behavior in current phase:
 
 - mobile sends versioned envelopes with `request_id`, `session_id`, and `device_id`
-- mobile performs manual sync flow: push (currently empty outgoing change set) then pull
-- pulled `recipe` entities are persisted into mobile local SQLite graph through repository boundaries
-- non-recipe entity changes are accepted by contract and ignored for direct apply until full incremental mobile apply is added
+- mobile performs manual sync flow: **push** (queued local changes since `since_cursor`: recipe graph, meal plans, meal plan items, `media_asset`, `recipe_user_state`) then **pull**
+- pulled `recipe` entities are persisted into the mobile SQLite graph through repository boundaries; additional pulled types handled in `sync_service.dart` include `collection`, `collection_item`, `meal_plan`, `meal_plan_item`, `grocery_list`, `grocery_list_item`, `recipe_user_state`, and `media_asset`
+- child recipe rows (`recipe_equipment_item`, `recipe_ingredient_item`, `recipe_step`, `step_link`, `step_timer`) are applied when delivered inside a `recipe` payload or via the same graph upsert path—not as a separate “ignored” class in the mobile client
 - sync status and errors are surfaced in UI and persisted in sync metadata storage
 
 Link/timer sync notes:

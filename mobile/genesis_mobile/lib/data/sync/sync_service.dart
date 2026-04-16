@@ -48,12 +48,18 @@ class SyncService {
       final List<Map<String, dynamic>> localMealPlanItemChanges = await _recipeRepository.listMealPlanItemChangesSince(cursor);
       final List<Map<String, dynamic>> localMediaAssetChanges = await _recipeRepository.listMediaAssetChangesSince(cursor);
       final List<Map<String, dynamic>> localUserStateChanges = await _recipeRepository.listRecipeUserStateChangesSince(cursor);
+      final List<Map<String, dynamic>> localGlobalEquipmentChanges = await _recipeRepository.listGlobalEquipmentChangesSince(cursor);
+      final List<Map<String, dynamic>> localCatalogIngredientChanges = await _recipeRepository.listCatalogIngredientChangesSince(cursor);
+      final List<Map<String, dynamic>> localTagChanges = await _recipeRepository.listTagChangesSince(cursor);
       final List<Map<String, dynamic>> localChanges = <Map<String, dynamic>>[
         ...localRecipeChanges,
         ...localMealPlanChanges,
         ...localMealPlanItemChanges,
         ...localMediaAssetChanges,
         ...localUserStateChanges,
+        ...localGlobalEquipmentChanges,
+        ...localCatalogIngredientChanges,
+        ...localTagChanges,
       ];
       final SyncEnvelope pushEnvelope = SyncEnvelope(
         syncProtocolVersion: kAppConfig.syncProtocolVersion,
@@ -88,16 +94,37 @@ class SyncService {
         final Map<String, dynamic> change = (rawChange as Map).cast<String, dynamic>();
         final String entityType = change["entity_type"] as String;
         final String op = change["op"] as String;
-        if (op == "delete") {
-          continue;
-        }
         final Map<String, dynamic>? body = (change["body"] as Map?)?.cast<String, dynamic>();
         if (entityType == "recipe") {
-          if (body == null) {
+          if (op == "delete" || body == null) {
             continue;
           }
           final RecipeDetail detail = syncBodyToRecipeDetail(body);
           await _recipeRepository.upsertRecipeGraph(detail, updatedAt: change["updated_at_utc"] as String);
+          continue;
+        }
+        if (entityType == "global_equipment") {
+          if (op == "delete") {
+            await _recipeRepository.tombstoneGlobalEquipment(change["entity_id"] as String, change["updated_at_utc"] as String);
+          } else if (body != null) {
+            await _recipeRepository.upsertGlobalEquipmentFromSync(body, change["updated_at_utc"] as String);
+          }
+          continue;
+        }
+        if (entityType == "catalog_ingredient") {
+          if (op == "delete") {
+            await _recipeRepository.tombstoneCatalogIngredient(change["entity_id"] as String, change["updated_at_utc"] as String);
+          } else if (body != null) {
+            await _recipeRepository.upsertCatalogIngredientFromSync(body, change["updated_at_utc"] as String);
+          }
+          continue;
+        }
+        if (entityType == "tag") {
+          if (op == "delete") {
+            await _recipeRepository.tombstoneTag(change["entity_id"] as String, change["updated_at_utc"] as String);
+          } else if (body != null) {
+            await _recipeRepository.upsertTagFromSync(body, change["updated_at_utc"] as String);
+          }
           continue;
         }
         if (entityType == "collection") {
@@ -262,9 +289,17 @@ class SyncService {
 }
 
 RecipeDetail syncBodyToRecipeDetail(Map<String, dynamic> body) {
+  final List<String> tags = ((body["tags"] as List?) ?? const <dynamic>[])
+      .map((dynamic e) => e.toString())
+      .where((String s) => s.trim().isNotEmpty)
+      .toList();
   final List<RecipeEquipmentItem> equipment = ((body["equipment"] as List?) ?? const <dynamic>[])
         .map((dynamic raw) {
       final Map<String, dynamic> item = (raw as Map).cast<String, dynamic>();
+      final dynamic req = item["is_required"];
+      final bool isRequired = req is bool ? req : ((req as num?)?.toInt() ?? 1) == 1;
+      final dynamic ord = item["display_order"];
+      final int displayOrder = ord is int ? ord : (ord as num).toInt();
       return RecipeEquipmentItem(
         id: item["id"] as String,
         recipeId: body["id"] as String,
@@ -273,8 +308,9 @@ RecipeDetail syncBodyToRecipeDetail(Map<String, dynamic> body) {
         notes: item["notes"] as String?,
         affiliateUrl: item["affiliate_url"] as String?,
         mediaId: item["media_id"] as String?,
-        isRequired: item["is_required"] as bool,
-        displayOrder: item["display_order"] as int,
+        globalEquipmentId: item["global_equipment_id"] as String?,
+        isRequired: isRequired,
+        displayOrder: displayOrder,
       );
     }).toList();
   final List<RecipeIngredientItem> ingredients = ((body["ingredients"] as List?) ?? const <dynamic>[])
@@ -292,6 +328,11 @@ RecipeDetail syncBodyToRecipeDetail(Map<String, dynamic> body) {
         mediaId: item["media_id"] as String?,
         isOptional: item["is_optional"] as bool,
         displayOrder: item["display_order"] as int,
+        catalogIngredientId: item["catalog_ingredient_id"] as String?,
+        subRecipeId: item["sub_recipe_id"] as String?,
+        subRecipeUsageType: item["sub_recipe_usage_type"] as String?,
+        subRecipeMultiplier: (item["sub_recipe_multiplier"] as num?)?.toDouble(),
+        subRecipeDisplayName: item["sub_recipe_display_name"] as String?,
       );
     }).toList();
   final List<StepLink> stepLinks = ((body["step_links"] as List?) ?? const <dynamic>[]).map((dynamic raw) {
@@ -311,13 +352,21 @@ RecipeDetail syncBodyToRecipeDetail(Map<String, dynamic> body) {
       final Map<String, dynamic> step = (raw as Map).cast<String, dynamic>();
       final List<StepTimer> timers = ((step["timers"] as List?) ?? const <dynamic>[]).map((dynamic timerRaw) {
         final Map<String, dynamic> timer = (timerRaw as Map).cast<String, dynamic>();
+        final dynamic vib = timer["alert_vibrate"];
+        final bool alertVibrate =
+            vib is bool ? vib : vib is num ? vib != 0 : false;
+        final dynamic ast = timer["auto_start"];
+        final bool autoStart = ast is bool ? ast : ((ast as num?)?.toInt() ?? 0) == 1;
+        final dynamic ds = timer["duration_seconds"];
+        final int durationSeconds = ds is int ? ds : (ds as num).toInt();
         return StepTimer(
           id: timer["id"] as String,
           stepId: step["id"] as String,
           label: timer["label"] as String,
-          durationSeconds: timer["duration_seconds"] as int,
-          autoStart: timer["auto_start"] as bool,
+          durationSeconds: durationSeconds,
+          autoStart: autoStart,
           alertSoundKey: timer["alert_sound_key"] as String?,
+          alertVibrate: alertVibrate,
         );
       }).toList();
       return RecipeStep(
@@ -349,6 +398,7 @@ RecipeDetail syncBodyToRecipeDetail(Map<String, dynamic> body) {
       cookMinutes: body["cook_minutes"] as int?,
       totalMinutes: body["total_minutes"] as int?,
       coverMediaId: body["cover_media_id"] as String?,
+      tags: tags,
       equipment: equipment,
       ingredients: ingredients,
       steps: steps,

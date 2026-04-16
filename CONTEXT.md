@@ -2,9 +2,13 @@
 
 ## What This App Is
 
-Genesis is a structured recipe platform, not a freeform notes app. A recipe is a graph of linked entities (recipe metadata, equipment, ingredients, steps, links, timers, media) that supports both creation and guided execution.
+Genesis (also referred to in product language as **Recipe Forge**) is a structured recipe platform, not a freeform notes app. A recipe is a graph of linked entities (recipe metadata, equipment, ingredients, steps, links, timers, media) that supports both creation and guided execution.
 
-Desktop is optimized for authoring; mobile is optimized for cooking flow.
+**Long-term compatibility:** recipes remain the primary user concept; the architecture should stay extensible toward broader **procedural knowledge** (structured how-to beyond cooking) **without** renaming core models prematurely.
+
+Desktop is optimized for authoring throughput; mobile is optimized for cooking flow, but **must not be treated as a second-class editor** for core structured content.
+
+**Strategic backlog:** future idea clusters (deeper catalog, extended composable-recipe semantics, Excel layer, media scale, etc.) live in `docs/10_IDEA_BACKLOG.md`. Dependency-ordered delivery is in `docs/09_ROADMAP.md`.
 
 ## Stack Decisions
 
@@ -161,10 +165,32 @@ Authoring refinement phase (equipment reuse, tags, clearer steps/timers):
 - **Link UI copy**: user-facing **Reference name** / **Display text (optional)** replace “token key” / “label override” in the desktop dialog; internals remain ID- and token-based.
 - **Timer UI**: preset **Sound** dropdown + **Vibrate** map to `alert_sound_key` and `alert_vibrate`; no raw key entry.
 - **Sync**: push/pull allowlist includes `global_equipment` and `tag` entity types; migration v11 is additive.
-- **Mobile**: parity for these fields is expected to follow in the mobile schema/repository/editor layers (Flutter `schemaVersion` / migrations not yet fully merged in this increment).
+- **Mobile v11 parity (shipped in repo)**: Flutter `schemaVersion` **11** matches desktop additive refinement: `global_equipment`, `tags` + `recipe_tags`, `recipe_equipment.global_equipment_id`, `recipes.tags_json`, `step_timers.alert_vibrate`, sync push/pull for `global_equipment` and `tag`, equipment editor **Pick from library** / **New library + add**, metadata **Tags** field, timer **Vibrate** toggle. Prerequisite for ingredient **catalog** work (`docs/10_IDEA_BACKLOG.md`).
+
+Ingredient catalog foundation (identity + reuse):
+
+- **`catalog_ingredient`**: user-owned reusable ingredient library rows (`name`, `normalized_name` for matching, optional `notes`); synced like `global_equipment` / `tags` with tombstones and `entity_version`.
+- **`recipe_ingredients.catalog_ingredient_id`**: optional foreign-style link; **recipe line text remains the snapshot** for display and history. Editing a catalog row does not rewrite existing recipe ingredient lines.
+- **UX**: desktop and mobile support free typing first; optional suggestions from the library, pick to link, and **save to library** without forcing catalog usage.
+- **Schema**: desktop migration **v12**; mobile **`schemaVersion` 12** with matching tables/columns.
+
+Library search stretch (organization, no hierarchy creep):
+
+- **Deterministic search** across title, subtitle, author, **tags** (text match), **ingredients** (raw + structured name + **linked catalog name**), equipment, and steps — implemented in **`RecipeSearchService`** (desktop) and **`RecipeRepository.searchRecipes`** (mobile), not in widgets.
+- **Tag filters**: **match all** selected tags; desktop checklist + mobile **FilterChips**.
+- **Ingredient-focused** mode: optional filter so the query must hit ingredient-side data (including catalog identity).
+- **Subtle row hints** when the match was not via title alone (e.g. `Catalog item · Tag`).
+
+Sub-recipe composable recipes (explicit references):
+
+- **`recipe_ingredients`**: optional `sub_recipe_id`, `sub_recipe_usage_type` (`full_batch` | `fraction_of_batch`), `sub_recipe_multiplier` (fraction only), `sub_recipe_display_name` (UX snapshot). Mutually exclusive with `catalog_ingredient_id` in validation. **Desktop migration v13**; **mobile `schemaVersion` 13**.
+- **Grocery**: `MealPlanService` / mobile `MealPlanService` recursively expand sub-recipes with meal-plan scale × batch multiplier; **max depth 24**, **cycle detection** on the active path, **warnings** + `[Missing recipe]` placeholder when the referenced row is absent. No arbitrary unit conversion.
+- **Share**: export computes a **transitive closure** of local dependencies and fails if any `sub_recipe_id` is missing locally; import **rejects the entire package** if any line references a recipe id not present in the same file, otherwise remaps all recipe ids consistently when cloning.
+- **UX**: desktop **Use recipe as ingredient…**; mobile structured ingredient dialog + recipe view tap-through to open the linked recipe when navigating from `MobileApp`.
 
 ## Source control and handoff
 
 - **Canonical remote**: [github.com/sosipater/genesis](https://github.com/sosipater/genesis) — empty-repo first push should use `main` as the default branch.
-- **Desktop DB schema**: SQLite migrations top out at **v11** (global equipment, tags/`recipe_tags`, `recipe_equipment.global_equipment_id`, `step_timers.alert_vibrate`). Mobile may lag; see refinement bullets above.
-- **Docs to read for a cold start**: `README.md` (map + commands), this file, then `docs/02_ARCHITECTURE.md`, `docs/03_DATA_MODEL.md`, `docs/04_SYNC_PROTOCOL.md`, `docs/05_UI_UX_GUIDELINES.md`, `docs/09_ROADMAP.md`.
+- **Desktop DB schema**: SQLite migrations top out at **v13** (sub-recipe columns on `recipe_ingredients`; plus v12 catalog, v11 global equipment, tags, etc.).
+- **Mobile DB schema**: **v13** in `mobile/genesis_mobile/lib/data/db/app_database.dart`, aligned with desktop for sub-recipes + catalog + prior refinements.
+- **Docs to read for a cold start**: `README.md` (map + commands), this file, then `docs/02_ARCHITECTURE.md`, `docs/03_DATA_MODEL.md`, `docs/04_SYNC_PROTOCOL.md`, `docs/05_UI_UX_GUIDELINES.md`, `docs/09_ROADMAP.md`, `docs/10_IDEA_BACKLOG.md`.

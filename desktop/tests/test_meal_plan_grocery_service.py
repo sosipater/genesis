@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
+from uuid import uuid4
 
-from desktop.app.domain.models import Recipe
+from desktop.app.domain.models import Recipe, RecipeIngredientItem
 from desktop.app.persistence.database import Database
 from desktop.app.persistence.recipe_repository import RecipeRepository
 from desktop.app.services.meal_plan_service import MealPlanService
@@ -23,9 +24,10 @@ def test_scaling_and_grocery_aggregation(tmp_path: Path) -> None:
     db = Database(tmp_path / "scale.db")
     try:
         service = MealPlanService(repository=RecipeRepository(db.conn))
-        items = service.generate_grocery_items([(recipe, 2.0)])
+        items, warnings = service.generate_grocery_items([(recipe, 2.0)])
     finally:
         db.close()
+    assert not warnings
     assert len(items) == 1
     assert items[0].name.lower() == "salt"
     assert items[0].quantity_value == 2.0
@@ -91,5 +93,240 @@ def test_meal_plan_and_grocery_persistence(tmp_path: Path) -> None:
         assert not repo.list_meal_plans()
         repo.restore_meal_plan(meal_plan_id)
         assert len(repo.list_meal_plans()) == 1
+    finally:
+        db.close()
+
+
+def _minimal_recipe(*, rid: str, title: str, ingredients: list[RecipeIngredientItem]) -> Recipe:
+    now = "2026-04-15T12:00:00Z"
+    return Recipe(
+        id=rid,
+        scope="local",
+        title=title,
+        status="published",
+        created_at=now,
+        updated_at=now,
+        equipment=[],
+        ingredients=ingredients,
+        steps=[],
+    )
+
+
+def test_sub_recipe_full_batch_expansion(tmp_path: Path) -> None:
+    base_id = str(uuid4())
+    parent_id = str(uuid4())
+    base = _minimal_recipe(
+        rid=base_id,
+        title="Sauce",
+        ingredients=[
+            RecipeIngredientItem(
+                id=str(uuid4()),
+                raw_text="1 cup milk",
+                is_optional=False,
+                display_order=0,
+                quantity_value=1.0,
+                unit="cup",
+                ingredient_name="milk",
+            )
+        ],
+    )
+    parent = _minimal_recipe(
+        rid=parent_id,
+        title="Main",
+        ingredients=[
+            RecipeIngredientItem(
+                id=str(uuid4()),
+                raw_text=f"Uses 1× {base.title}",
+                is_optional=False,
+                display_order=0,
+                sub_recipe_id=base_id,
+                sub_recipe_usage_type="full_batch",
+                sub_recipe_display_name=base.title,
+            ),
+            RecipeIngredientItem(
+                id=str(uuid4()),
+                raw_text="1 tsp salt",
+                is_optional=False,
+                display_order=1,
+                quantity_value=1.0,
+                unit="tsp",
+                ingredient_name="salt",
+            ),
+        ],
+    )
+    db = Database(tmp_path / "sub.db")
+    try:
+        repo = RecipeRepository(db.conn)
+        repo.create_recipe(base)
+        repo.create_recipe(parent)
+        service = MealPlanService(repository=repo)
+        items, warnings = service.generate_grocery_items([(parent, 2.0)])
+    finally:
+        db.close()
+    assert not warnings
+    by_name = {i.name.lower(): i for i in items}
+    assert "milk" in by_name
+    assert by_name["milk"].quantity_value == 2.0
+    assert "salt" in by_name
+    assert by_name["salt"].quantity_value == 2.0
+
+
+def test_sub_recipe_fraction_multiplier(tmp_path: Path) -> None:
+    base_id = str(uuid4())
+    parent_id = str(uuid4())
+    base = _minimal_recipe(
+        rid=base_id,
+        title="Sauce",
+        ingredients=[
+            RecipeIngredientItem(
+                id=str(uuid4()),
+                raw_text="200 g sugar",
+                is_optional=False,
+                display_order=0,
+                quantity_value=200.0,
+                unit="g",
+                ingredient_name="sugar",
+            )
+        ],
+    )
+    parent = _minimal_recipe(
+        rid=parent_id,
+        title="Main",
+        ingredients=[
+            RecipeIngredientItem(
+                id=str(uuid4()),
+                raw_text="Uses 0.5× Sauce",
+                is_optional=False,
+                display_order=0,
+                sub_recipe_id=base_id,
+                sub_recipe_usage_type="fraction_of_batch",
+                sub_recipe_multiplier=0.5,
+                sub_recipe_display_name="Sauce",
+            ),
+        ],
+    )
+    db = Database(tmp_path / "frac.db")
+    try:
+        repo = RecipeRepository(db.conn)
+        repo.create_recipe(base)
+        repo.create_recipe(parent)
+        service = MealPlanService(repository=repo)
+        items, warnings = service.generate_grocery_items([(parent, 2.0)])
+    finally:
+        db.close()
+    assert not warnings
+    sugar = next(i for i in items if "sugar" in i.name.lower())
+    assert sugar.quantity_value == 200.0 * 2.0 * 0.5
+
+
+def test_sub_recipe_cycle_and_missing(tmp_path: Path) -> None:
+    a, b = str(uuid4()), str(uuid4())
+    ra = _minimal_recipe(
+        rid=a,
+        title="A",
+        ingredients=[
+            RecipeIngredientItem(
+                id=str(uuid4()),
+                raw_text="Uses 1× B",
+                is_optional=False,
+                display_order=0,
+                sub_recipe_id=b,
+                sub_recipe_usage_type="full_batch",
+                sub_recipe_display_name="B",
+            )
+        ],
+    )
+    rb = _minimal_recipe(
+        rid=b,
+        title="B",
+        ingredients=[
+            RecipeIngredientItem(
+                id=str(uuid4()),
+                raw_text="Uses 1× A",
+                is_optional=False,
+                display_order=0,
+                sub_recipe_id=a,
+                sub_recipe_usage_type="full_batch",
+                sub_recipe_display_name="A",
+            )
+        ],
+    )
+    missing_parent = str(uuid4())
+    missing_line_id = str(uuid4())
+    rm = _minimal_recipe(
+        rid=missing_parent,
+        title="Has missing",
+        ingredients=[
+            RecipeIngredientItem(
+                id=missing_line_id,
+                raw_text="Uses 1× Ghost",
+                is_optional=False,
+                display_order=0,
+                sub_recipe_id=str(uuid4()),
+                sub_recipe_usage_type="full_batch",
+                sub_recipe_display_name="Ghost",
+            )
+        ],
+    )
+    db = Database(tmp_path / "cycle.db")
+    try:
+        repo = RecipeRepository(db.conn)
+        repo.create_recipe(ra)
+        repo.create_recipe(rb)
+        repo.create_recipe(rm)
+        service = MealPlanService(repository=repo)
+        _, warnings = service.generate_grocery_items([(ra, 1.0)])
+        assert any("circular" in w.lower() for w in warnings)
+        items2, w2 = service.generate_grocery_items([(rm, 1.0)])
+        assert any("missing" in w.lower() for w in w2)
+        assert any("[missing recipe]" in i.name.lower() for i in items2)
+    finally:
+        db.close()
+
+
+def test_sub_recipe_fields_round_trip_through_repository(tmp_path: Path) -> None:
+    base_id = str(uuid4())
+    parent_id = str(uuid4())
+    base = _minimal_recipe(
+        rid=base_id,
+        title="Sauce",
+        ingredients=[
+            RecipeIngredientItem(
+                id=str(uuid4()),
+                raw_text="1 g x",
+                is_optional=False,
+                display_order=0,
+                quantity_value=1.0,
+                unit="g",
+                ingredient_name="x",
+            )
+        ],
+    )
+    parent = _minimal_recipe(
+        rid=parent_id,
+        title="Main",
+        ingredients=[
+            RecipeIngredientItem(
+                id=str(uuid4()),
+                raw_text="Uses 1× Sauce",
+                is_optional=False,
+                display_order=0,
+                sub_recipe_id=base_id,
+                sub_recipe_usage_type="full_batch",
+                sub_recipe_display_name="Sauce",
+            ),
+        ],
+    )
+    db = Database(tmp_path / "roundtrip.db")
+    try:
+        repo = RecipeRepository(db.conn)
+        repo.create_recipe(base)
+        repo.create_recipe(parent)
+        loaded = repo.get_recipe_by_id(parent_id)
+        assert loaded is not None
+        ing0 = loaded.ingredients[0]
+        assert ing0.sub_recipe_id == base_id
+        assert ing0.sub_recipe_usage_type == "full_batch"
+        assert ing0.sub_recipe_display_name == "Sauce"
     finally:
         db.close()

@@ -52,17 +52,21 @@ class RecipeShareService:
         self._share_validator = Draft202012Validator(self._share_schema)
 
     def export_recipes(self, recipe_ids: list[str], package_path: Path) -> RecipeShareExportResult:
-        local_recipes = {recipe.id: recipe for recipe in self._repo.list_recipes(include_deleted=False)}
+        local_by_id = {recipe.id: recipe for recipe in self._repo.list_recipes(include_deleted=False) if recipe.scope == "local"}
         selected: list[Recipe] = []
         for recipe_id in recipe_ids:
-            recipe = local_recipes.get(recipe_id)
+            recipe = local_by_id.get(recipe_id)
             if recipe is None:
                 raise ValueError(f"Recipe not found in local scope: {recipe_id}")
-            if recipe.scope != "local":
-                raise ValueError(f"Only local recipes can be exported for sharing: {recipe_id}")
             if self._has_media_references(recipe):
                 raise ValueError(user_facing_share_media_blocked_detail(recipe_id=recipe_id))
             selected.append(recipe)
+
+        closure_ids = self._closure_local_dependency_ids([r.id for r in selected], local_by_id)
+        to_export = [local_by_id[rid] for rid in closure_ids]
+        for recipe in to_export:
+            if self._has_media_references(recipe):
+                raise ValueError(user_facing_share_media_blocked_detail(recipe_id=recipe.id))
 
         package_id = str(uuid4())
         payload = {
@@ -71,11 +75,11 @@ class RecipeShareService:
             "exported_at_utc": utc_now_iso(),
             "source_app": "genesis-desktop",
             "media_included": False,
-            "recipes": [recipe.to_dict() for recipe in sorted(selected, key=lambda value: value.id)],
+            "recipes": [recipe.to_dict() for recipe in sorted(to_export, key=lambda value: value.id)],
         }
         package_path.parent.mkdir(parents=True, exist_ok=True)
         package_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-        return RecipeShareExportResult(package_path=package_path, recipe_count=len(selected), package_id=package_id)
+        return RecipeShareExportResult(package_path=package_path, recipe_count=len(to_export), package_id=package_id)
 
     def import_package(self, package_path: Path, import_source_label: str | None = None) -> RecipeShareImportResult:
         payload = json.loads(package_path.read_text(encoding="utf-8"))
@@ -89,6 +93,7 @@ class RecipeShareService:
         collisions: list[str] = []
         seen_import_keys: set[tuple[str, str]] = set()
 
+        candidates: list[Recipe] = []
         for recipe_payload in payload["recipes"]:
             recipe_errors = [error.message for error in self._recipe_validator.iter_errors(recipe_payload)]
             if recipe_errors:
@@ -114,19 +119,39 @@ class RecipeShareService:
                 skipped_count += 1
                 continue
             seen_import_keys.add(import_key)
+            candidates.append(imported_recipe)
 
+        package_recipe_ids = {recipe.id for recipe in candidates}
+        orphan_errors: list[str] = []
+        for recipe in candidates:
+            for ing in recipe.ingredients:
+                if ing.sub_recipe_id and ing.sub_recipe_id not in package_recipe_ids:
+                    orphan_errors.append(
+                        f"recipe {recipe.id}: ingredient line references sub-recipe {ing.sub_recipe_id} "
+                        "which is not included in this share package"
+                    )
+        if orphan_errors:
+            return RecipeShareImportResult(
+                imported_count=0,
+                skipped_count=skipped_count,
+                collisions=collisions,
+                errors=errors + orphan_errors,
+            )
+
+        recipe_id_map = {recipe.id: str(uuid4()) for recipe in sorted(candidates, key=lambda value: value.id)}
+        for recipe in sorted(candidates, key=lambda value: value.id):
             existing = [
-                recipe
-                for recipe in self._repo.list_recipes(include_deleted=False)
-                if recipe.imported_from_package_id == package_id and recipe.imported_from_recipe_id == imported_recipe.id
+                row
+                for row in self._repo.list_recipes(include_deleted=False)
+                if row.imported_from_package_id == package_id and row.imported_from_recipe_id == recipe.id
             ]
             if existing:
                 skipped_count += 1
-                collisions.append(f"already imported from package: {imported_recipe.id}")
+                collisions.append(f"already imported from package: {recipe.id}")
                 continue
 
-            original_id = imported_recipe.id
-            imported_recipe = self._clone_as_new_local(imported_recipe)
+            original_id = recipe.id
+            imported_recipe = self._clone_with_recipe_id_map(recipe, recipe_id_map)
             imported_recipe.imported_from_package_id = package_id
             imported_recipe.imported_from_recipe_id = original_id
             imported_recipe.imported_at = utc_now_iso()
@@ -154,7 +179,25 @@ class RecipeShareService:
             errors=errors,
         )
 
-    def _clone_as_new_local(self, recipe: Recipe) -> Recipe:
+    def _closure_local_dependency_ids(self, seed_ids: list[str], local_by_id: dict[str, Recipe]) -> list[str]:
+        ordered: list[str] = []
+        seen: set[str] = set()
+        queue = list(seed_ids)
+        while queue:
+            rid = queue.pop(0)
+            if rid in seen:
+                continue
+            recipe = local_by_id.get(rid)
+            if recipe is None:
+                raise ValueError(f"Recipe not found for export: {rid}")
+            seen.add(rid)
+            ordered.append(rid)
+            for ing in sorted(recipe.ingredients, key=lambda row: row.display_order):
+                if ing.sub_recipe_id and ing.sub_recipe_id not in seen:
+                    queue.append(ing.sub_recipe_id)
+        return sorted(ordered)
+
+    def _clone_with_recipe_id_map(self, recipe: Recipe, recipe_id_map: dict[str, str]) -> Recipe:
         old_to_new: dict[str, str] = {}
 
         def _new_id(old_id: str) -> str:
@@ -163,7 +206,7 @@ class RecipeShareService:
             return new_id
 
         cloned = Recipe(
-            id=str(uuid4()),
+            id=recipe_id_map[recipe.id],
             scope="local",
             title=recipe.title,
             status=recipe.status,
@@ -206,6 +249,11 @@ class RecipeShareService:
                 )
             )
         for item in recipe.ingredients:
+            new_sub: str | None = None
+            if item.sub_recipe_id:
+                new_sub = recipe_id_map.get(item.sub_recipe_id)
+                if new_sub is None:
+                    raise ValueError(f"sub-recipe id {item.sub_recipe_id} missing from import id map")
             cloned.ingredients.append(
                 RecipeIngredientItem(
                     id=_new_id(item.id),
@@ -221,6 +269,11 @@ class RecipeShareService:
                     affiliate_url=item.affiliate_url,
                     recommended_product=item.recommended_product,
                     media_id=item.media_id,
+                    catalog_ingredient_id=item.catalog_ingredient_id,
+                    sub_recipe_id=new_sub,
+                    sub_recipe_usage_type=item.sub_recipe_usage_type,
+                    sub_recipe_multiplier=item.sub_recipe_multiplier,
+                    sub_recipe_display_name=item.sub_recipe_display_name,
                 )
             )
         for step in recipe.steps:

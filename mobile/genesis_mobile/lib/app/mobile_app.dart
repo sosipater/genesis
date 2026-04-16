@@ -167,6 +167,7 @@ class _MobileAppState extends State<MobileApp> {
           controller: RecipeViewController(widget.dependencies.recipeRepository),
           timerRuntimeController: widget.dependencies.timerRuntimeController,
           onEditRequested: () => _editRecipe(recipeId),
+          onNavigateToSubRecipe: _openRecipe,
         ),
       ),
     );

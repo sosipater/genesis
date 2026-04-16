@@ -89,6 +89,7 @@ class SyncService:
             "step_link",
             "step_timer",
             "global_equipment",
+            "catalog_ingredient",
             "tag",
             "collection",
             "collection_item",

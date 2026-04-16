@@ -27,6 +27,8 @@ class MealPlanController extends ChangeNotifier {
   DateTime selectedWeekStart = _weekStartFor(DateTime.now());
   bool loading = false;
   String? error;
+  /// Populated after grocery generation; cleared on next successful run with no notes.
+  List<String> lastGroceryWarnings = <String>[];
   NotificationPreferences notificationPreferences = const NotificationPreferences(
     notificationsEnabled: false,
     defaultMealReminderEnabled: false,
@@ -125,22 +127,27 @@ class MealPlanController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> generateGroceryForSelectedMealPlan() async {
-    if (selectedMealPlanId == null) return;
-    final String listId = await _service.generateGroceryListFromMealPlan(selectedMealPlanId!);
-    selectedGroceryListId = listId;
+  Future<List<String>> generateGroceryForSelectedMealPlan() async {
+    if (selectedMealPlanId == null) return <String>[];
+    final GroceryListGenerationResult result = await _service.generateGroceryListFromMealPlan(selectedMealPlanId!);
+    selectedGroceryListId = result.groceryListId;
     groceryLists = await _repository.listGroceryLists();
-    groceryItems = await _repository.listGroceryListItems(listId);
+    groceryItems = await _repository.listGroceryListItems(result.groceryListId);
+    lastGroceryWarnings = result.warnings;
     notifyListeners();
+    return result.warnings;
   }
 
-  Future<void> generateGroceryForCurrentWeek() async {
-    if (selectedMealPlanId == null) return;
-    final String listId = await _service.generateWeeklyGroceryList(selectedMealPlanId!, selectedWeekStart);
-    selectedGroceryListId = listId;
+  Future<List<String>> generateGroceryForCurrentWeek() async {
+    if (selectedMealPlanId == null) return <String>[];
+    final GroceryListGenerationResult result =
+        await _service.generateWeeklyGroceryList(selectedMealPlanId!, selectedWeekStart);
+    selectedGroceryListId = result.groceryListId;
     groceryLists = await _repository.listGroceryLists();
-    groceryItems = await _repository.listGroceryListItems(listId);
+    groceryItems = await _repository.listGroceryListItems(result.groceryListId);
+    lastGroceryWarnings = result.warnings;
     notifyListeners();
+    return result.warnings;
   }
 
   Future<void> deleteSelectedMealPlan() async {
@@ -168,22 +175,24 @@ class MealPlanController extends ChangeNotifier {
     await selectMealPlan(restoredId);
   }
 
-  Future<void> generateGroceryForDateRange(String startDate, String endDate) async {
-    if (selectedMealPlanId == null) return;
-    final String listId = await _service.generateGroceryListFromMealPlan(
+  Future<List<String>> generateGroceryForDateRange(String startDate, String endDate) async {
+    if (selectedMealPlanId == null) return <String>[];
+    final GroceryListGenerationResult result = await _service.generateGroceryListFromMealPlan(
       selectedMealPlanId!,
       startDate: startDate,
       endDate: endDate,
     );
-    selectedGroceryListId = listId;
+    selectedGroceryListId = result.groceryListId;
     groceryLists = await _repository.listGroceryLists();
-    groceryItems = await _repository.listGroceryListItems(listId);
+    groceryItems = await _repository.listGroceryListItems(result.groceryListId);
+    lastGroceryWarnings = result.warnings;
     notifyListeners();
+    return result.warnings;
   }
 
-  Future<void> regenerateGroceryForSelectedMealPlan() async {
+  Future<List<String>> regenerateGroceryForSelectedMealPlan() async {
     // Explicitly creates a new snapshot and keeps prior edited list intact.
-    await generateGroceryForSelectedMealPlan();
+    return generateGroceryForSelectedMealPlan();
   }
 
   Future<void> selectGroceryList(String groceryListId) async {

@@ -37,6 +37,7 @@ Desktop and mobile must provide fast section switching with no deep navigation d
 - preserve raw human expression (`raw_text`) even when structured fields are present
 - optional substitutions, preparation notes, affiliate data, media
 - step-linkable via stable IDs
+- optional **sub-recipe** reference: another recipe as a component (`full_batch` or `fraction_of_batch` with explicit multiplier), with predictable grocery expansion and explicit share/export rules (no hidden unit conversion)
 
 ## Step/Flow Requirements
 

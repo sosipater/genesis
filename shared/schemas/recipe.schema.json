@@ -103,7 +103,15 @@
         "recommended_product": { "type": ["string", "null"] },
         "media_id": { "type": ["string", "null"], "format": "uuid" },
         "is_optional": { "type": "boolean" },
-        "display_order": { "type": "integer", "minimum": 0 }
+        "display_order": { "type": "integer", "minimum": 0 },
+        "catalog_ingredient_id": { "type": ["string", "null"], "format": "uuid" },
+        "sub_recipe_id": { "type": ["string", "null"], "format": "uuid" },
+        "sub_recipe_usage_type": {
+          "type": ["string", "null"],
+          "enum": ["full_batch", "fraction_of_batch", null]
+        },
+        "sub_recipe_multiplier": { "type": ["number", "null"] },
+        "sub_recipe_display_name": { "type": ["string", "null"] }
       },
       "additionalProperties": false
     },

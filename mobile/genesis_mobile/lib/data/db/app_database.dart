@@ -4,7 +4,7 @@ import "package:path/path.dart" as p;
 import "package:sqflite/sqflite.dart";
 
 class AppDatabase {
-  static const int schemaVersion = 10;
+  static const int schemaVersion = 13;
   Database? _db;
 
   static Future<String> _resolveDbPath(String databasesPath) async {
@@ -192,6 +192,72 @@ class AppDatabase {
             )
           """);
         }
+        if (oldVersion < 11) {
+          await db.execute("""
+            CREATE TABLE IF NOT EXISTS global_equipment (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              notes TEXT NULL,
+              media_id TEXT NULL,
+              entity_version INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              deleted_at TEXT NULL
+            )
+          """);
+          await db.execute("CREATE INDEX IF NOT EXISTS idx_global_equipment_updated ON global_equipment(updated_at)");
+          await db.execute("""
+            CREATE TABLE IF NOT EXISTS tags (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL COLLATE NOCASE,
+              color TEXT NULL,
+              entity_version INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              deleted_at TEXT NULL,
+              UNIQUE(name)
+            )
+          """);
+          await db.execute("CREATE INDEX IF NOT EXISTS idx_tags_updated ON tags(updated_at)");
+          await db.execute("""
+            CREATE TABLE IF NOT EXISTS recipe_tags (
+              recipe_id TEXT NOT NULL,
+              tag_id TEXT NOT NULL,
+              PRIMARY KEY (recipe_id, tag_id),
+              FOREIGN KEY(recipe_id) REFERENCES recipes(id) ON DELETE CASCADE,
+              FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
+            )
+          """);
+          await db.execute("ALTER TABLE recipe_equipment ADD COLUMN global_equipment_id TEXT NULL");
+          await db.execute(
+            "ALTER TABLE step_timers ADD COLUMN alert_vibrate INTEGER NOT NULL DEFAULT 0",
+          );
+          await db.execute("ALTER TABLE recipes ADD COLUMN tags_json TEXT NULL");
+          await db.execute("UPDATE recipes SET tags_json = '[]' WHERE tags_json IS NULL");
+        }
+        if (oldVersion < 12) {
+          await db.execute("""
+            CREATE TABLE IF NOT EXISTS catalog_ingredient (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              normalized_name TEXT NOT NULL,
+              notes TEXT NULL,
+              entity_version INTEGER NOT NULL DEFAULT 1,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL,
+              deleted_at TEXT NULL
+            )
+          """);
+          await db.execute("CREATE INDEX IF NOT EXISTS idx_catalog_ingredient_updated ON catalog_ingredient(updated_at)");
+          await db.execute("CREATE INDEX IF NOT EXISTS idx_catalog_ingredient_normalized ON catalog_ingredient(normalized_name)");
+          await db.execute("ALTER TABLE recipe_ingredients ADD COLUMN catalog_ingredient_id TEXT NULL");
+        }
+        if (oldVersion < 13) {
+          await db.execute("ALTER TABLE recipe_ingredients ADD COLUMN sub_recipe_id TEXT NULL");
+          await db.execute("ALTER TABLE recipe_ingredients ADD COLUMN sub_recipe_usage_type TEXT NULL");
+          await db.execute("ALTER TABLE recipe_ingredients ADD COLUMN sub_recipe_multiplier REAL NULL");
+          await db.execute("ALTER TABLE recipe_ingredients ADD COLUMN sub_recipe_display_name TEXT NULL");
+        }
       },
     );
     await _db!.execute("PRAGMA foreign_keys = ON");
@@ -216,6 +282,7 @@ class AppDatabase {
         total_minutes INTEGER NULL,
         cover_media_id TEXT NULL,
         status TEXT NOT NULL,
+        tags_json TEXT NOT NULL DEFAULT '[]',
         updated_at TEXT NULL,
         deleted_at TEXT NULL
       )
@@ -229,6 +296,7 @@ class AppDatabase {
         notes TEXT NULL,
         affiliate_url TEXT NULL,
         media_id TEXT NULL,
+        global_equipment_id TEXT NULL,
         is_required INTEGER NOT NULL,
         display_order INTEGER NOT NULL,
         deleted_at TEXT NULL,
@@ -248,6 +316,11 @@ class AppDatabase {
         media_id TEXT NULL,
         is_optional INTEGER NOT NULL,
         display_order INTEGER NOT NULL,
+        catalog_ingredient_id TEXT NULL,
+        sub_recipe_id TEXT NULL,
+        sub_recipe_usage_type TEXT NULL,
+        sub_recipe_multiplier REAL NULL,
+        sub_recipe_display_name TEXT NULL,
         deleted_at TEXT NULL,
         FOREIGN KEY(recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
       )
@@ -301,6 +374,7 @@ class AppDatabase {
         duration_seconds INTEGER NOT NULL,
         auto_start INTEGER NOT NULL,
         alert_sound_key TEXT NULL,
+        alert_vibrate INTEGER NOT NULL DEFAULT 0,
         deleted_at TEXT NULL,
         FOREIGN KEY(step_id) REFERENCES recipe_steps(id) ON DELETE CASCADE
       )
@@ -428,6 +502,55 @@ class AppDatabase {
         pinned INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL,
         deleted_at TEXT NULL
+      )
+    """);
+    await db.execute("""
+      CREATE TABLE global_equipment (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        notes TEXT NULL,
+        media_id TEXT NULL,
+        entity_version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT NULL
+      )
+    """);
+    await db.execute("CREATE INDEX idx_global_equipment_updated ON global_equipment(updated_at)");
+    await db.execute("""
+      CREATE TABLE catalog_ingredient (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        normalized_name TEXT NOT NULL,
+        notes TEXT NULL,
+        entity_version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT NULL
+      )
+    """);
+    await db.execute("CREATE INDEX idx_catalog_ingredient_updated ON catalog_ingredient(updated_at)");
+    await db.execute("CREATE INDEX idx_catalog_ingredient_normalized ON catalog_ingredient(normalized_name)");
+    await db.execute("""
+      CREATE TABLE tags (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL COLLATE NOCASE,
+        color TEXT NULL,
+        entity_version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT NULL,
+        UNIQUE(name)
+      )
+    """);
+    await db.execute("CREATE INDEX idx_tags_updated ON tags(updated_at)");
+    await db.execute("""
+      CREATE TABLE recipe_tags (
+        recipe_id TEXT NOT NULL,
+        tag_id TEXT NOT NULL,
+        PRIMARY KEY (recipe_id, tag_id),
+        FOREIGN KEY(recipe_id) REFERENCES recipes(id) ON DELETE CASCADE,
+        FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
       )
     """);
   }

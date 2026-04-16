@@ -20,6 +20,36 @@ class _FakeEditorRepository implements RecipeEditorRepositoryPort {
     stored = recipe;
     saveCount += 1;
   }
+
+  @override
+  Future<List<GlobalEquipmentSummary>> listGlobalEquipmentForPicker() async {
+    return <GlobalEquipmentSummary>[];
+  }
+
+  @override
+  Future<String> createGlobalEquipmentRecord({required String name, String? notes}) async {
+    return "global-equipment-test-id";
+  }
+
+  @override
+  Future<List<CatalogIngredientSummary>> listCatalogIngredientsForPicker() async {
+    return <CatalogIngredientSummary>[];
+  }
+
+  @override
+  Future<List<CatalogIngredientSummary>> searchCatalogIngredients(String query, {int limit = 20}) async {
+    return <CatalogIngredientSummary>[];
+  }
+
+  @override
+  Future<String> createCatalogIngredientRecord({required String name, String? notes}) async {
+    return "catalog-ingredient-test-id";
+  }
+
+  @override
+  Future<List<RecipeSummary>> listLocalRecipesForSubRecipePicker({required String excludeRecipeId}) async {
+    return <RecipeSummary>[];
+  }
 }
 
 void main() {

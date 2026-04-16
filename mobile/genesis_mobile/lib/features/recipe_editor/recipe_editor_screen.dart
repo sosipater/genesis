@@ -30,6 +30,7 @@ class _RecipeEditorScreenState extends State<RecipeEditorScreen> with SingleTick
   final TextEditingController _prep = TextEditingController();
   final TextEditingController _cook = TextEditingController();
   final TextEditingController _total = TextEditingController();
+  final TextEditingController _tags = TextEditingController();
   String _status = "draft";
   String _difficulty = "";
 
@@ -59,6 +60,7 @@ class _RecipeEditorScreenState extends State<RecipeEditorScreen> with SingleTick
     _prep.dispose();
     _cook.dispose();
     _total.dispose();
+    _tags.dispose();
     super.dispose();
   }
 
@@ -77,6 +79,7 @@ class _RecipeEditorScreenState extends State<RecipeEditorScreen> with SingleTick
       _total.text = recipe.totalMinutes?.toString() ?? "";
       _status = recipe.status;
       _difficulty = recipe.difficulty ?? "";
+      _tags.text = recipe.tags.join(", ");
     }
     if (mounted) {
       setState(() {});
@@ -229,6 +232,15 @@ class _RecipeEditorScreenState extends State<RecipeEditorScreen> with SingleTick
             TextField(controller: _prep, keyboardType: TextInputType.number, enabled: widget.controller.canEdit, decoration: const InputDecoration(labelText: "Prep Minutes")),
             TextField(controller: _cook, keyboardType: TextInputType.number, enabled: widget.controller.canEdit, decoration: const InputDecoration(labelText: "Cook Minutes")),
             TextField(controller: _total, keyboardType: TextInputType.number, enabled: widget.controller.canEdit, decoration: const InputDecoration(labelText: "Total Minutes")),
+            TextField(
+              controller: _tags,
+              enabled: widget.controller.canEdit,
+              decoration: const InputDecoration(
+                labelText: "Tags",
+                hintText: "Comma-separated (optional)",
+                border: OutlineInputBorder(),
+              ),
+            ),
             const SizedBox(height: 8),
             Row(
               children: <Widget>[
@@ -273,6 +285,11 @@ class _RecipeEditorScreenState extends State<RecipeEditorScreen> with SingleTick
   }
 
   void _saveMetadataOnly() {
+    final List<String> tags = _tags.text
+        .split(",")
+        .map((String s) => s.trim())
+        .where((String s) => s.isNotEmpty)
+        .toList();
     widget.controller.updateMetadata(
       title: _title.text,
       subtitle: _subtitle.text,
@@ -286,6 +303,7 @@ class _RecipeEditorScreenState extends State<RecipeEditorScreen> with SingleTick
       prepMinutes: int.tryParse(_prep.text),
       cookMinutes: int.tryParse(_cook.text),
       totalMinutes: int.tryParse(_total.text),
+      tags: tags,
     );
   }
 
@@ -372,6 +390,8 @@ class _IngredientsEditor extends StatefulWidget {
 
 class _IngredientsEditorState extends State<_IngredientsEditor> {
   final TextEditingController _quickLine = TextEditingController();
+  List<CatalogIngredientSummary> _suggestions = const <CatalogIngredientSummary>[];
+  String? _pendingCatalogId;
 
   @override
   void dispose() {
@@ -379,13 +399,59 @@ class _IngredientsEditorState extends State<_IngredientsEditor> {
     super.dispose();
   }
 
+  Future<void> _onQuickLineChanged(String value) async {
+    final String q = value.trim();
+    if (q.isEmpty) {
+      setState(() {
+        _suggestions = const <CatalogIngredientSummary>[];
+        _pendingCatalogId = null;
+      });
+      return;
+    }
+    final List<CatalogIngredientSummary> next = await widget.controller.searchCatalogIngredients(q);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _suggestions = next);
+  }
+
+  void _selectSuggestion(CatalogIngredientSummary row) {
+    setState(() {
+      _quickLine.text = row.name;
+      _pendingCatalogId = row.id;
+      _suggestions = const <CatalogIngredientSummary>[];
+    });
+  }
+
+  Future<void> _saveLineToLibrary() async {
+    final String line = _quickLine.text.trim();
+    if (line.isEmpty || !widget.controller.canEdit) {
+      return;
+    }
+    try {
+      final String id = await widget.controller.createCatalogIngredientRecord(name: line);
+      if (!mounted) {
+        return;
+      }
+      setState(() => _pendingCatalogId = id);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Saved to ingredient library — add line to link")));
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("$e")));
+    }
+  }
+
   void _addQuickLine() {
     final String line = _quickLine.text.trim();
     if (line.isEmpty || !widget.controller.canEdit) {
       return;
     }
-    widget.controller.addIngredient(rawText: line);
+    widget.controller.addIngredient(rawText: line, catalogIngredientId: _pendingCatalogId);
     _quickLine.clear();
+    _pendingCatalogId = null;
+    _suggestions = const <CatalogIngredientSummary>[];
     setState(() {});
   }
 
@@ -398,26 +464,57 @@ class _IngredientsEditorState extends State<_IngredientsEditor> {
         if (widget.controller.canEdit)
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Expanded(
-                  child: TextField(
-                    controller: _quickLine,
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _addQuickLine(),
-                    decoration: const InputDecoration(
-                      labelText: "Add ingredient",
-                      hintText: "e.g. 2 cups flour",
-                      border: OutlineInputBorder(),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(
+                      child: TextField(
+                        controller: _quickLine,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _addQuickLine(),
+                        onChanged: _onQuickLineChanged,
+                        decoration: const InputDecoration(
+                          labelText: "Add ingredient",
+                          hintText: "e.g. 2 cups flour — matches your library",
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: "Save typed text to library",
+                      onPressed: _saveLineToLibrary,
+                      icon: const Icon(Icons.library_add_outlined),
+                    ),
+                    IconButton(
+                      tooltip: "Add line",
+                      onPressed: _addQuickLine,
+                      icon: const Icon(Icons.add_circle_outline),
+                    ),
+                  ],
+                ),
+                if (_suggestions.isNotEmpty)
+                  Material(
+                    elevation: 1,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 160),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _suggestions.length,
+                        itemBuilder: (BuildContext context, int i) {
+                          final CatalogIngredientSummary s = _suggestions[i];
+                          return ListTile(
+                            dense: true,
+                            title: Text(s.name),
+                            subtitle: s.notes == null || s.notes!.isEmpty ? null : Text(s.notes!),
+                            onTap: () => _selectSuggestion(s),
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: "Add line",
-                  onPressed: _addQuickLine,
-                  icon: const Icon(Icons.add_circle_outline),
-                ),
               ],
             ),
           ),
@@ -440,10 +537,18 @@ class _IngredientsEditorState extends State<_IngredientsEditor> {
                 item.unit ?? "",
                 item.ingredientName ?? "",
               ].join(" ").trim();
+              final List<String> subParts = <String>[
+                if (structured.isNotEmpty) structured,
+                if (item.catalogIngredientId != null) "Library link",
+                if (item.subRecipeId != null && item.subRecipeId!.isNotEmpty) "Sub-recipe",
+              ];
               return ListTile(
                 key: ValueKey<String>(item.id),
                 title: Text(item.rawText),
-                subtitle: structured.isEmpty ? const Text("Tap edit to split quantity, unit, or name", style: TextStyle(fontSize: 12)) : Text(structured),
+                subtitle: Text(
+                  subParts.isEmpty ? "Tap edit to split quantity, unit, or name" : subParts.join(" · "),
+                  style: const TextStyle(fontSize: 12),
+                ),
                 trailing: Wrap(
                   spacing: 4,
                   children: <Widget>[
@@ -525,6 +630,98 @@ Future<void> _showEquipmentDialog(BuildContext context, RecipeEditorController c
       content: StatefulBuilder(
         builder: (BuildContext context, void Function(void Function()) setState) => SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, children: <Widget>[
+            if (item == null && controller.canEdit)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: <Widget>[
+                    TextButton(
+                      onPressed: () async {
+                        final List<GlobalEquipmentSummary> items = await controller.listGlobalEquipmentForPicker();
+                        if (!context.mounted) {
+                          return;
+                        }
+                        if (items.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("No saved equipment yet — use “New library + add”.")),
+                          );
+                          return;
+                        }
+                        final GlobalEquipmentSummary? picked = await showDialog<GlobalEquipmentSummary>(
+                          context: context,
+                          builder: (BuildContext ctx) => SimpleDialog(
+                            title: const Text("My equipment"),
+                            children: <Widget>[
+                              for (final GlobalEquipmentSummary ge in items)
+                                SimpleDialogOption(
+                                  onPressed: () => Navigator.pop(ctx, ge),
+                                  child: Text(ge.name),
+                                ),
+                            ],
+                          ),
+                        );
+                        if (picked != null) {
+                          await controller.addEquipmentFromGlobalSummary(picked, isRequired: required);
+                          if (context.mounted) {
+                            Navigator.of(context).pop();
+                          }
+                        }
+                      },
+                      child: const Text("Pick from library"),
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        final TextEditingController libName = TextEditingController();
+                        final TextEditingController libNotes = TextEditingController();
+                        final bool? ok = await showDialog<bool>(
+                          context: context,
+                          builder: (BuildContext ctx) => AlertDialog(
+                            title: const Text("New library item"),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                TextField(
+                                  controller: libName,
+                                  decoration: const InputDecoration(labelText: "Name"),
+                                ),
+                                TextField(
+                                  controller: libNotes,
+                                  decoration: const InputDecoration(labelText: "Notes (optional)"),
+                                ),
+                              ],
+                            ),
+                            actions: <Widget>[
+                              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Cancel")),
+                              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Create & add")),
+                            ],
+                          ),
+                        );
+                        if (ok == true && libName.text.trim().isNotEmpty) {
+                          await controller.createGlobalEquipmentAndAdd(
+                            name: libName.text,
+                            notes: libNotes.text.isEmpty ? null : libNotes.text,
+                            isRequired: required,
+                          );
+                          if (context.mounted) {
+                            Navigator.of(context).pop();
+                          }
+                        }
+                      },
+                      child: const Text("New library + add"),
+                    ),
+                  ],
+                ),
+              ),
+            if (item?.globalEquipmentId != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  "Linked to equipment library",
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+              ),
             TextField(controller: name, decoration: const InputDecoration(labelText: "Name")),
             TextField(controller: description, decoration: const InputDecoration(labelText: "Description")),
             TextField(controller: notes, decoration: const InputDecoration(labelText: "Notes")),
@@ -569,83 +766,199 @@ Future<void> _showEquipmentDialog(BuildContext context, RecipeEditorController c
 }
 
 Future<void> _showIngredientDialog(BuildContext context, RecipeEditorController controller, {RecipeIngredientItem? item}) async {
+  final List<RecipeSummary> subOptions = await controller.listLocalRecipesForSubRecipePicker();
+  if (!context.mounted) {
+    return;
+  }
   final TextEditingController raw = TextEditingController(text: item?.rawText ?? "");
   final TextEditingController qty = TextEditingController(text: item?.quantityValue?.toString() ?? "");
   final TextEditingController unit = TextEditingController(text: item?.unit ?? "");
   final TextEditingController name = TextEditingController(text: item?.ingredientName ?? "");
   final TextEditingController sub = TextEditingController(text: item?.substitutions ?? "");
   final TextEditingController prep = TextEditingController(text: item?.preparationNotes ?? "");
+  final TextEditingController mult = TextEditingController(
+    text: item?.subRecipeMultiplier?.toString() ?? "1",
+  );
   bool optional = item?.isOptional ?? false;
+  bool useSubRecipe = item?.subRecipeId != null && item!.subRecipeId!.isNotEmpty;
+  String? selectedSubId = item?.subRecipeId;
+  String subUsage = item?.subRecipeUsageType ?? "full_batch";
   await showDialog<void>(
     context: context,
-    builder: (BuildContext context) => AlertDialog(
-      title: Text(item == null ? "Add Ingredient" : "Edit Ingredient"),
-      content: StatefulBuilder(
-        builder: (BuildContext context, void Function(void Function()) setState) => SingleChildScrollView(
+    builder: (BuildContext context) => StatefulBuilder(
+      builder: (BuildContext context, void Function(void Function()) setState) => AlertDialog(
+        title: Text(item == null ? "Add Ingredient" : "Edit Ingredient"),
+        content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
+              SwitchListTile(
+                value: useSubRecipe,
+                title: const Text("Use another recipe as ingredient"),
+                subtitle: const Text("Full batch or fraction; grocery expands into that recipe’s lines."),
+                onChanged: subOptions.isEmpty
+                    ? null
+                    : (bool v) {
+                        setState(() {
+                          useSubRecipe = v;
+                          if (v && selectedSubId == null && subOptions.isNotEmpty) {
+                            selectedSubId = subOptions.first.id;
+                          }
+                          if (!v) {
+                            selectedSubId = null;
+                          }
+                        });
+                      },
+              ),
+              if (useSubRecipe) ...<Widget>[
+                DropdownButtonFormField<String>(
+                  value: selectedSubId, // ignore: deprecated_member_use
+                  decoration: const InputDecoration(labelText: "Recipe"),
+                  items: subOptions
+                      .map(
+                        (RecipeSummary r) => DropdownMenuItem<String>(value: r.id, child: Text(r.title)),
+                      )
+                      .toList(),
+                  onChanged: (String? v) => setState(() => selectedSubId = v),
+                ),
+                DropdownButtonFormField<String>(
+                  value: subUsage, // ignore: deprecated_member_use
+                  decoration: const InputDecoration(labelText: "Usage"),
+                  items: const <DropdownMenuItem<String>>[
+                    DropdownMenuItem<String>(value: "full_batch", child: Text("Full batch (1×)")),
+                    DropdownMenuItem<String>(value: "fraction_of_batch", child: Text("Fraction of batch")),
+                  ],
+                  onChanged: (String? v) => setState(() => subUsage = v ?? "full_batch"),
+                ),
+                if (subUsage == "fraction_of_batch")
+                  TextField(
+                    controller: mult,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(labelText: "Multiplier (e.g. 0.5, 2)"),
+                  ),
+                SwitchListTile(
+                  value: optional,
+                  title: const Text("Optional ingredient"),
+                  onChanged: (bool value) => setState(() => optional = value),
+                ),
+              ],
               TextField(
                 controller: raw,
                 decoration: const InputDecoration(
                   labelText: "Ingredient line",
-                  hintText: "e.g. 2 cups flour, sifted",
+                  hintText: "e.g. Uses 1× Béchamel",
                   border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 8),
-              ExpansionTile(
-                title: const Text("Structured fields"),
-                subtitle: const Text("Optional — split quantity, unit, and name"),
-                initiallyExpanded: false,
-                children: <Widget>[
-                  TextField(controller: qty, decoration: const InputDecoration(labelText: "Quantity")),
-                  TextField(controller: unit, decoration: const InputDecoration(labelText: "Unit")),
-                  TextField(controller: name, decoration: const InputDecoration(labelText: "Name")),
-                  TextField(controller: sub, decoration: const InputDecoration(labelText: "Substitutions")),
-                  TextField(controller: prep, decoration: const InputDecoration(labelText: "Preparation notes")),
-                  SwitchListTile(
-                    value: optional,
-                    title: const Text("Optional ingredient"),
-                    onChanged: (bool value) => setState(() => optional = value),
+              if (!useSubRecipe && item?.catalogIngredientId != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    "Linked to ingredient library (line text is still the recipe snapshot)",
+                    style: Theme.of(context).textTheme.labelMedium,
                   ),
-                ],
-              ),
+                ),
+              if (!useSubRecipe)
+                ExpansionTile(
+                  title: const Text("Structured fields"),
+                  subtitle: const Text("Optional — split quantity, unit, and name"),
+                  initiallyExpanded: false,
+                  children: <Widget>[
+                    TextField(controller: qty, decoration: const InputDecoration(labelText: "Quantity")),
+                    TextField(controller: unit, decoration: const InputDecoration(labelText: "Unit")),
+                    TextField(controller: name, decoration: const InputDecoration(labelText: "Name")),
+                    TextField(controller: sub, decoration: const InputDecoration(labelText: "Substitutions")),
+                    TextField(controller: prep, decoration: const InputDecoration(labelText: "Preparation notes")),
+                    SwitchListTile(
+                      value: optional,
+                      title: const Text("Optional ingredient"),
+                      onChanged: (bool value) => setState(() => optional = value),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),
+        actions: <Widget>[
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text("Cancel")),
+          FilledButton(
+            onPressed: () {
+              if (useSubRecipe) {
+                if (selectedSubId == null || raw.text.trim().isEmpty) {
+                  return;
+                }
+                if (subUsage == "fraction_of_batch") {
+                  final double? m = double.tryParse(mult.text.trim());
+                  if (m == null || m <= 0) {
+                    return;
+                  }
+                }
+                final RecipeSummary picked = subOptions.firstWhere((RecipeSummary r) => r.id == selectedSubId);
+                final double? multVal =
+                    subUsage == "fraction_of_batch" ? double.tryParse(mult.text.trim()) : null;
+                if (item == null) {
+                  controller.addIngredient(
+                    rawText: raw.text,
+                    isOptional: optional,
+                    subRecipeId: selectedSubId,
+                    subRecipeUsageType: subUsage,
+                    subRecipeMultiplier: multVal,
+                    subRecipeDisplayName: picked.title,
+                  );
+                } else {
+                  controller.updateIngredient(
+                    item.id,
+                    rawText: raw.text,
+                    quantityValue: double.tryParse(qty.text),
+                    unit: unit.text,
+                    ingredientName: name.text,
+                    substitutions: sub.text,
+                    preparationNotes: prep.text,
+                    isOptional: optional,
+                    catalogIngredientId: null,
+                    subRecipeId: selectedSubId,
+                    subRecipeUsageType: subUsage,
+                    subRecipeMultiplier: multVal,
+                    subRecipeDisplayName: picked.title,
+                  );
+                }
+              } else {
+                if (item == null) {
+                  controller.addIngredient(
+                    rawText: raw.text,
+                    quantityValue: double.tryParse(qty.text),
+                    unit: unit.text,
+                    ingredientName: name.text,
+                    substitutions: sub.text,
+                    preparationNotes: prep.text,
+                    isOptional: optional,
+                  );
+                } else {
+                  controller.updateIngredient(
+                    item.id,
+                    rawText: raw.text,
+                    quantityValue: double.tryParse(qty.text),
+                    unit: unit.text,
+                    ingredientName: name.text,
+                    substitutions: sub.text,
+                    preparationNotes: prep.text,
+                    isOptional: optional,
+                    catalogIngredientId: item.catalogIngredientId,
+                    subRecipeId: null,
+                    subRecipeUsageType: null,
+                    subRecipeMultiplier: null,
+                    subRecipeDisplayName: null,
+                  );
+                }
+              }
+              Navigator.of(context).pop();
+            },
+            child: const Text("Apply"),
+          ),
+        ],
       ),
-      actions: <Widget>[
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text("Cancel")),
-        FilledButton(
-          onPressed: () {
-            if (item == null) {
-              controller.addIngredient(
-                rawText: raw.text,
-                quantityValue: double.tryParse(qty.text),
-                unit: unit.text,
-                ingredientName: name.text,
-                substitutions: sub.text,
-                preparationNotes: prep.text,
-                isOptional: optional,
-              );
-            } else {
-              controller.updateIngredient(
-                item.id,
-                rawText: raw.text,
-                quantityValue: double.tryParse(qty.text),
-                unit: unit.text,
-                ingredientName: name.text,
-                substitutions: sub.text,
-                preparationNotes: prep.text,
-                isOptional: optional,
-              );
-            }
-            Navigator.of(context).pop();
-          },
-          child: const Text("Apply"),
-        ),
-      ],
     ),
   );
 }
@@ -918,6 +1231,7 @@ Future<void> _showTimerDialog(BuildContext context, RecipeEditorController contr
   final TextEditingController duration = TextEditingController(text: existing?.durationSeconds.toString() ?? "60");
   final TextEditingController sound = TextEditingController(text: existing?.alertSoundKey ?? "");
   bool autoStart = existing?.autoStart ?? false;
+  bool vibrate = existing?.alertVibrate ?? false;
   await showDialog<void>(
     context: context,
     builder: (BuildContext context) => StatefulBuilder(
@@ -928,6 +1242,7 @@ Future<void> _showTimerDialog(BuildContext context, RecipeEditorController contr
           TextField(controller: duration, decoration: const InputDecoration(labelText: "Duration Seconds")),
           TextField(controller: sound, decoration: const InputDecoration(labelText: "Alert Sound Key")),
           SwitchListTile(value: autoStart, title: const Text("Auto Start"), onChanged: (bool value) => setState(() => autoStart = value)),
+          SwitchListTile(value: vibrate, title: const Text("Vibrate on complete"), onChanged: (bool value) => setState(() => vibrate = value)),
         ]),
         actions: <Widget>[
           TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text("Cancel")),
@@ -941,6 +1256,7 @@ Future<void> _showTimerDialog(BuildContext context, RecipeEditorController contr
                   durationSeconds: secs,
                   autoStart: autoStart,
                   alertSoundKey: sound.text,
+                  alertVibrate: vibrate,
                 );
               } else {
                 controller.updateTimer(
@@ -950,6 +1266,7 @@ Future<void> _showTimerDialog(BuildContext context, RecipeEditorController contr
                   durationSeconds: secs,
                   autoStart: autoStart,
                   alertSoundKey: sound.text,
+                  alertVibrate: vibrate,
                 );
               }
               Navigator.of(context).pop();

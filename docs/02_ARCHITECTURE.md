@@ -14,7 +14,7 @@ Genesis is a dual-app monorepo with shared contracts. The public Git remote for 
 
 - `ui`: PySide6 views/view-models (authoring workflow)
 - `domain`: typed domain entities + business rules
-- `persistence`: normalized SQLite schema + migrations + repositories (desktop schema migrations include **v11**: global equipment pool, tags + `recipe_tags`, optional `global_equipment_id` on recipe equipment, `alert_vibrate` on step timers)
+- `persistence`: normalized SQLite schema + migrations + repositories (desktop schema migrations include **v13**: optional sub-recipe columns on `recipe_ingredients`; **v12** `catalog_ingredient` + optional `catalog_ingredient_id`; **v11** global equipment pool, tags + `recipe_tags`, optional `global_equipment_id` on recipe equipment, `alert_vibrate` on step timers)
 - `services`: editor orchestration between UI and repository/bundled loader
 - `viewmodels`: explicit editor state (dirty/read-only/save eligibility)
 - `bundled_loader`: read-only bundled manifest/recipe readers (separate from repositories)
@@ -55,6 +55,7 @@ Mobile bundled/local behavior in this phase:
 
 - mobile does not ship bundled assets yet; bundled data can still be represented by `scope` when synced
 - local mobile DB stores synced recipe graph and keeps scope distinctions visible in UI
+- **schema v13** on mobile aligns with desktop for **sub-recipe** columns on `recipe_ingredients`, plus **v12** **catalog ingredient** library + link column, **v11** reusable **global equipment**, normalized **tags**, recipe equipment `global_equipment_id`, and timer `alert_vibrate`
 - architecture keeps room for future read-only bundled asset overlay on device
 - chosen strategy remains sync/local graph on mobile for now (no shipped bundled assets in mobile package yet)
 

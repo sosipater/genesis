@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -38,10 +39,14 @@ class LibraryPanel(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.search_input = QLineEdit(self)
-        self.search_input.setPlaceholderText("Search recipes")
+        self.search_input.setPlaceholderText("Search title, ingredients, tags, steps…")
+        self.ingredient_focus_check = QCheckBox("Match ingredients only", self)
+        self.ingredient_focus_check.setToolTip(
+            "Only show recipes where the search text matches an ingredient line or linked catalog item name."
+        )
         self.scope_filter = QComboBox(self)
         self.scope_filter.addItems(["all", "local", "bundled", "forked"])
-        self.tag_filter_label = QLabel("Tags (match all selected)", self)
+        self.tag_filter_label = QLabel("Tags (recipes must include all checked)", self)
         self.tag_filter_list = QListWidget(self)
         self.tag_filter_list.setMaximumHeight(88)
         self.tag_filter_list.itemChanged.connect(lambda _: self._emit_search_change())
@@ -70,6 +75,7 @@ class LibraryPanel(QWidget):
         self.list_widget.itemSelectionChanged.connect(self._emit_selected)
         self.search_input.textChanged.connect(lambda _: self._emit_search_change())
         self.scope_filter.currentTextChanged.connect(lambda _: self._emit_search_change())
+        self.ingredient_focus_check.stateChanged.connect(lambda _: self._emit_search_change())
         self.create_collection_button.clicked.connect(self.create_collection_requested.emit)
         self.rename_collection_button.clicked.connect(self._emit_rename_collection)
         self.delete_collection_button.clicked.connect(self._emit_delete_collection)
@@ -105,6 +111,7 @@ class LibraryPanel(QWidget):
 
         root = QVBoxLayout(self)
         root.addWidget(self.search_input)
+        root.addWidget(self.ingredient_focus_check)
         root.addWidget(self.scope_filter)
         root.addWidget(self.tag_filter_label)
         root.addWidget(self.tag_filter_list)
@@ -150,7 +157,8 @@ class LibraryPanel(QWidget):
         if item.is_favorite:
             flags.append("FAV")
         flag_text = f" [{'|'.join(flags)}]" if flags else ""
-        return f"[{item.source.upper()}] {item.title}{flag_text}"
+        hint = f" — {item.match_hints}" if item.match_hints else ""
+        return f"[{item.source.upper()}] {item.title}{flag_text}{hint}"
 
     def _passes_scope_filter(self, item: LibraryRecipeItem) -> bool:
         scope = self.scope_filter.currentText()
@@ -164,15 +172,11 @@ class LibraryPanel(QWidget):
 
     def _refresh_list(self) -> None:
         self.list_widget.clear()
-        query = self.search_input.text().strip().lower()
         visible_count = 0
         for item in self._items:
-            rendered = self._rendered_item(item)
             if not self._passes_scope_filter(item):
                 continue
-            if query and query not in rendered.lower():
-                continue
-            self.list_widget.addItem(rendered)
+            self.list_widget.addItem(self._rendered_item(item))
             visible_count += 1
         if not self._items:
             self.empty_state_label.setText("No recipes yet. Click New Local Recipe to start, or import/sync when available.")
@@ -187,15 +191,16 @@ class LibraryPanel(QWidget):
         row = self.list_widget.currentRow()
         if row < 0:
             return None
-        query = self.search_input.text().strip().lower()
-        visible_items = [
-            item
-            for item in self._items
-            if self._passes_scope_filter(item) and ((not query) or (query in self._rendered_item(item).lower()))
-        ]
+        visible_items = [item for item in self._items if self._passes_scope_filter(item)]
         if row >= len(visible_items):
             return None
         return visible_items[row]
+
+    def selected_tag_filters(self) -> list[str]:
+        return self._selected_tag_filters()
+
+    def ingredient_focus_enabled(self) -> bool:
+        return self.ingredient_focus_check.isChecked()
 
     def _selected_collection_id(self) -> str | None:
         row = self.collections_list.currentRow()

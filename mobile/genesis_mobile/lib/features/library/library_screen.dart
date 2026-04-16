@@ -1,5 +1,7 @@
-import "package:flutter/material.dart";
+import "dart:async";
 import "dart:io";
+
+import "package:flutter/material.dart";
 
 import "../../data/models/recipe_models.dart";
 import "library_controller.dart";
@@ -26,6 +28,7 @@ class LibraryScreen extends StatefulWidget {
 
 class _LibraryScreenState extends State<LibraryScreen> {
   final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -36,9 +39,27 @@ class _LibraryScreenState extends State<LibraryScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     widget.controller.removeListener(_onChanged);
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _scheduleSearch(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 380), () {
+      widget.controller.setSearchQuery(value);
+    });
+  }
+
+  String _listSubtitle(RecipeSummary recipe) {
+    final String base = (recipe.subtitle != null && recipe.subtitle!.trim().isNotEmpty)
+        ? recipe.subtitle!
+        : recipe.status;
+    if (recipe.searchMatchHint != null && recipe.searchMatchHint!.trim().isNotEmpty) {
+      return "$base · ${recipe.searchMatchHint}";
+    }
+    return base;
   }
 
   void _onChanged() {
@@ -65,10 +86,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
               TextField(
                 controller: _searchController,
                 decoration: const InputDecoration(
-                  labelText: "Search",
+                  labelText: "Search recipes",
+                  hintText: "Title, ingredients, tags, steps…",
                   border: OutlineInputBorder(),
                 ),
-                onSubmitted: (String value) => widget.controller.setSearchQuery(value),
+                onChanged: _scheduleSearch,
+                onSubmitted: widget.controller.setSearchQuery,
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text("Ingredient-focused"),
+                subtitle: const Text("Query must match an ingredient or catalog name", style: TextStyle(fontSize: 12)),
+                value: widget.controller.ingredientFocus,
+                onChanged: (bool v) => widget.controller.setIngredientFocus(v),
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -97,6 +127,28 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                 ],
               ),
+              if (widget.controller.availableTags.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text("Tags (all selected)", style: Theme.of(context).textTheme.labelMedium),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: widget.controller.availableTags.map((String name) {
+                    final bool on = widget.controller.selectedTagFilters.any(
+                      (String x) => x.toLowerCase() == name.toLowerCase(),
+                    );
+                    return FilterChip(
+                      label: Text(name),
+                      selected: on,
+                      onSelected: (_) => widget.controller.toggleTagFilter(name),
+                    );
+                  }).toList(),
+                ),
+              ],
             ],
           ),
         ),
@@ -181,7 +233,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     return ListTile(
                       leading: _buildCoverLeading(recipe),
                       title: Text(recipe.title),
-                      subtitle: Text(recipe.subtitle ?? recipe.status),
+                      subtitle: Text(_listSubtitle(recipe)),
                       trailing: Wrap(
                         spacing: 8,
                         children: <Widget>[

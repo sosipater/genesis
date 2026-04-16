@@ -46,6 +46,25 @@ class LibraryRecipeItem:
     is_favorite: bool = False
     last_opened_at: str | None = None
     last_cooked_at: str | None = None
+    # Subtle library-only hint when the query matched outside the title (e.g. ingredient, catalog, tag).
+    match_hints: str | None = None
+
+
+_LIBRARY_SEARCH_HINT_LABELS = {
+    "subtitle": "Subtitle",
+    "author": "Author",
+    "tag": "Tag",
+    "ingredient": "Ingredient",
+    "catalog": "Catalog item",
+    "equipment": "Equipment",
+    "step": "Step",
+}
+
+
+def _format_library_search_hints(hints: tuple[str, ...]) -> str | None:
+    if not hints:
+        return None
+    return " · ".join(_LIBRARY_SEARCH_HINT_LABELS.get(h, h.title()) for h in hints)
 
 
 @dataclass(slots=True)
@@ -276,12 +295,47 @@ class EditorService:
     ) -> str:
         return self._repository.create_global_equipment(name, notes=notes, media_id=media_id)
 
+    def list_catalog_ingredient_summaries(self) -> list[dict[str, str | None]]:
+        return [
+            {
+                "id": str(row["id"]),
+                "name": str(row["name"]),
+                "notes": row["notes"],
+            }
+            for row in self._repository.list_catalog_ingredient_for_picker()
+        ]
+
+    def search_catalog_ingredient_summaries(self, query: str, *, limit: int = 20) -> list[dict[str, str | None]]:
+        return [
+            {
+                "id": str(row["id"]),
+                "name": str(row["name"]),
+                "notes": row["notes"],
+            }
+            for row in self._repository.search_catalog_ingredients(query, limit=limit)
+        ]
+
+    def create_catalog_ingredient_record(self, name: str, *, notes: str | None = None) -> str:
+        return self._repository.create_catalog_ingredient(name, notes=notes)
+
+    def list_local_recipes_for_sub_recipe_picker(self, *, exclude_recipe_id: str | None = None) -> list[dict[str, str]]:
+        rows: list[dict[str, str]] = []
+        for recipe in self._repository.list_recipes(include_deleted=False):
+            if recipe.scope != "local":
+                continue
+            if exclude_recipe_id and recipe.id == exclude_recipe_id:
+                continue
+            rows.append({"id": recipe.id, "title": recipe.title})
+        rows.sort(key=lambda item: item["title"].lower())
+        return rows
+
     def search_library(self, query: str, filters: RecipeSearchFilters | None = None) -> list[LibraryRecipeItem]:
         state_by_recipe = {row["recipe_id"]: row for row in self._list_user_states()}
         all_recipes = self._repository.list_recipes(include_deleted=False) + [
             item for item in self._bundled_loader.load_bundled_recipes() if item.deleted_at is None
         ]
-        results = self._search_service.search(all_recipes, query, filters)
+        catalog_names = self._repository.catalog_ingredient_id_to_name()
+        results = self._search_service.search(all_recipes, query, filters, catalog_names_by_id=catalog_names)
         return [
             LibraryRecipeItem(
                 id=result.recipe.id,
@@ -294,6 +348,7 @@ class EditorService:
                 is_favorite=bool(state_by_recipe.get(result.recipe.id, {}).get("is_favorite", False)),
                 last_opened_at=state_by_recipe.get(result.recipe.id, {}).get("last_opened_at"),
                 last_cooked_at=state_by_recipe.get(result.recipe.id, {}).get("last_cooked_at"),
+                match_hints=_format_library_search_hints(result.match_hints),
             )
             for result in results
         ]
@@ -472,7 +527,7 @@ class EditorService:
 
     def generate_grocery_list_from_meal_plan(
         self, meal_plan_id: str, *, start_date: str | None = None, end_date: str | None = None
-    ) -> str:
+    ) -> tuple[str, list[str]]:
         plan_items = self._repository.list_meal_plan_items(meal_plan_id)
         if start_date or end_date:
             plan_items = [
@@ -492,7 +547,7 @@ class EditorService:
             else:
                 factor = 1.0
             recipes_with_factors.append((recipe, factor))
-        grocery_items = self._meal_plan_service.generate_grocery_items(recipes_with_factors)
+        grocery_items, warnings = self._meal_plan_service.generate_grocery_items(recipes_with_factors)
         name_suffix = f"{start_date or '?'}..{end_date or start_date}" if (start_date or end_date) else utc_now_iso()[:10]
         list_id = self._repository.create_grocery_list(meal_plan_id=meal_plan_id, name=f"Grocery {name_suffix}")
         self._repository.replace_grocery_list_items(
@@ -511,13 +566,13 @@ class EditorService:
                 for item in grocery_items
             ],
         )
-        return list_id
+        return list_id, warnings
 
-    def regenerate_grocery_list_snapshot(self, meal_plan_id: str) -> str:
+    def regenerate_grocery_list_snapshot(self, meal_plan_id: str) -> tuple[str, list[str]]:
         # Explicitly create a new snapshot; existing lists remain unchanged.
         return self.generate_grocery_list_from_meal_plan(meal_plan_id)
 
-    def generate_weekly_grocery_snapshot(self, meal_plan_id: str, week_start_date: str) -> str:
+    def generate_weekly_grocery_snapshot(self, meal_plan_id: str, week_start_date: str) -> tuple[str, list[str]]:
         from datetime import date, timedelta
 
         start = date.fromisoformat(week_start_date)
@@ -656,6 +711,12 @@ class EditorService:
                     substitutions=item.substitutions,
                     affiliate_url=item.affiliate_url,
                     recommended_product=item.recommended_product,
+                    media_id=item.media_id,
+                    catalog_ingredient_id=item.catalog_ingredient_id,
+                    sub_recipe_id=item.sub_recipe_id,
+                    sub_recipe_usage_type=item.sub_recipe_usage_type,
+                    sub_recipe_multiplier=item.sub_recipe_multiplier,
+                    sub_recipe_display_name=item.sub_recipe_display_name,
                 )
             )
 

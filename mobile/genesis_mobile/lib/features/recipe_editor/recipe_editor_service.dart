@@ -36,6 +36,7 @@ class RecipeEditorService {
         notes: entry.value.notes,
         affiliateUrl: entry.value.affiliateUrl,
         mediaId: entry.value.mediaId,
+        globalEquipmentId: entry.value.globalEquipmentId,
         isRequired: entry.value.isRequired,
         displayOrder: entry.key,
       );
@@ -56,6 +57,11 @@ class RecipeEditorService {
         mediaId: entry.value.mediaId,
         isOptional: entry.value.isOptional,
         displayOrder: entry.key,
+        catalogIngredientId: entry.value.catalogIngredientId,
+        subRecipeId: entry.value.subRecipeId,
+        subRecipeUsageType: entry.value.subRecipeUsageType,
+        subRecipeMultiplier: entry.value.subRecipeMultiplier,
+        subRecipeDisplayName: entry.value.subRecipeDisplayName,
       );
     }).toList();
 
@@ -81,6 +87,7 @@ class RecipeEditorService {
                 durationSeconds: timer.durationSeconds,
                 autoStart: timer.autoStart,
                 alertSoundKey: timer.alertSoundKey,
+                alertVibrate: timer.alertVibrate,
               ),
             )
             .toList(),
@@ -120,6 +127,7 @@ class RecipeEditorService {
       cookMinutes: source.cookMinutes,
       totalMinutes: source.totalMinutes,
       coverMediaId: source.coverMediaId,
+      tags: List<String>.from(source.tags),
       equipment: equipment,
       ingredients: ingredients,
       steps: steps,
@@ -137,6 +145,7 @@ class RecipeEditorService {
               notes: entry.value.notes,
               affiliateUrl: entry.value.affiliateUrl,
               mediaId: entry.value.mediaId,
+              globalEquipmentId: entry.value.globalEquipmentId,
               isRequired: entry.value.isRequired,
               displayOrder: entry.key,
             ))
@@ -154,6 +163,11 @@ class RecipeEditorService {
               mediaId: entry.value.mediaId,
               isOptional: entry.value.isOptional,
               displayOrder: entry.key,
+              catalogIngredientId: entry.value.catalogIngredientId,
+              subRecipeId: entry.value.subRecipeId,
+              subRecipeUsageType: entry.value.subRecipeUsageType,
+              subRecipeMultiplier: entry.value.subRecipeMultiplier,
+              subRecipeDisplayName: entry.value.subRecipeDisplayName,
             ))
         .toList();
     final List<RecipeStep> steps = recipe.steps.asMap().entries
@@ -175,6 +189,7 @@ class RecipeEditorService {
                       durationSeconds: timer.durationSeconds,
                       autoStart: timer.autoStart,
                       alertSoundKey: timer.alertSoundKey,
+                      alertVibrate: timer.alertVibrate,
                     ),
                   )
                   .toList(),
@@ -213,6 +228,7 @@ class RecipeEditorService {
       cookMinutes: recipe.cookMinutes,
       totalMinutes: recipe.totalMinutes,
       coverMediaId: recipe.coverMediaId,
+      tags: List<String>.from(recipe.tags),
       equipment: equipment,
       ingredients: ingredients,
       steps: steps,

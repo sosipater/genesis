@@ -25,6 +25,8 @@
 ## Desktop regression highlights
 
 - `desktop/tests/test_refinement_phase.py` covers global equipment persistence, `recipe_tags` alignment, timer `alert_vibrate` roundtrip, sound preset mapping, and tag-based library filters.
+- `desktop/tests/test_meal_plan_grocery_service.py` covers sub-recipe grocery expansion (full batch, fraction, cycles, missing refs, repository round-trip).
+- `desktop/tests/test_recipe_share_service.py` covers share export transitive closure and orphan sub-recipe import rejection (requires `jsonschema` for collection).
 
 ## Regression Guardrails
 

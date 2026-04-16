@@ -55,6 +55,8 @@ Desktop step authoring enhancements:
 Refinement phase (authoring reuse + clarity):
 
 - **Equipment**: desktop includes a searchable **My Equipment** picker plus inline “create global + add to recipe”; recipe lines may reference `global_equipment_id` while still allowing fully custom rows.
+- **Ingredients (catalog foundation)**: default path remains **fast free-text** lines (quick add). Optional **Ingredient library** picker (desktop) and **typeahead suggestions + save to library** (desktop + mobile) link `catalog_ingredient_id` when the user chooses; typing without picking stays unlinked. Recipe lines always keep their own text as the snapshot; catalog edits never rewrite saved lines.
+- **Sub-recipes (composable recipes)**: optional **“use another recipe as ingredient”** flow on desktop (**Use recipe as ingredient…**) and mobile (structured ingredient dialog). User picks a **local** recipe, **full batch** or **fraction of batch** (+ multiplier), and keeps an explicit ingredient line (e.g. “Uses 1× Béchamel”). Tooltip / subtitle text explains that grocery expands into the linked recipe’s ingredients — no hidden magic or unit conversion.
 - **Steps**: optional **Advanced (optional)** block (collapsible) groups links, timers, and step image actions so new steps do not require a second pass; adding a step expands Advanced by default once to surface power features without cluttering the simple path.
 - **Links (user copy)**: UI uses **Reference name** and **Display text (optional)** with short help text; values still map to internal `token_key` / `label_override`. Reference names auto-fill from the selected target until the user edits them.
 - **Timers**: sound is chosen from presets (mapped internally to `alert_sound_key`); **Vibrate** is a toggle (`alert_vibrate`). Users are not asked to type raw sound keys.
@@ -71,7 +73,7 @@ Recipe detail uses top segmented control or tabs:
 Execution behavior:
 
 - Steps is default execution center
-- timer definitions are visible on steps (runtime timer controls deferred)
+- timer definitions are visible on steps; mobile provides inline start/pause/resume/cancel plus a persistent timers strip (see “Interactive flow enhancements” below)
 - quick jump back to recently opened recipe supported by local recent tracking
 - sync controls exposed in dedicated tab/screen (host config, test, manual sync)
 
@@ -102,6 +104,10 @@ Mobile authoring parity baseline:
 - Library exposes explicit create action and edit entry point for existing recipes.
 - Mobile authoring uses a dedicated editor surface with tabs for Metadata/Equipment/Ingredients/Steps.
 - Equipment, ingredients, and steps support add/edit/delete/reorder workflows.
+- Equipment dialog supports **Pick from library** and **New library + add** (synced `global_equipment` pool); lines can show a **Linked to equipment library** hint when `global_equipment_id` is set.
+- Ingredients quick-add supports **library suggestions** (tap to link) and **save typed text to the ingredient library**; list rows may show a **Library link** hint when `catalog_ingredient_id` is set. No forced catalog selection.
+- Sub-recipe lines show a compact **Sub-recipe** hint on mobile; in **recipe view**, tapping a sub-recipe line opens the linked recipe when a navigator callback is available (cooking flow: lasagna → béchamel).
+- Metadata **More details** includes comma-separated **Tags** (stored as `tags_json` + normalized `recipe_tags` like desktop).
 - Step editing includes structured link management and structured timer management.
 - Bundled recipes are shown as read-only; users must duplicate to local before editing.
 - Desktop remains the faster/high-throughput authoring surface, but mobile now supports full core recipe-building capability.
@@ -109,6 +115,13 @@ Mobile authoring parity baseline:
 Interactive flow enhancements:
 
 - Steps render link tokens as tappable chips in-flow
+
+Library search and filters (desktop + mobile):
+
+- Search is **deterministic** (fixed scoring weights, title then id tie-break) and spans **title, subtitle, author, tags, ingredient lines, linked catalog names, equipment, and step text** — logic lives in **service/repository** layers, not widgets.
+- **Tag filters** use **match-all** semantics (recipe must include every selected tag). Desktop: checklist under the search field. Mobile: compact **FilterChip** row (no new screen).
+- **Ingredient-focused** mode (optional): only recipes where the query matches **ingredient raw text, structured name, or catalog-linked name** — useful when the user cares about “has this ingredient” more than title hits.
+- Library rows may show a **short match hint** (e.g. `Ingredient · Tag`) when the query matched outside the title; kept subtle to avoid noisy badges.
 
 Working set UX:
 

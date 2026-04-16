@@ -34,6 +34,22 @@ class _MealPlanScreenState extends State<MealPlanScreen> {
     }
   }
 
+  Future<void> _runGrocery(Future<List<String>> Function() action) async {
+    final List<String> warnings = await action();
+    if (!mounted) {
+      return;
+    }
+    if (warnings.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Grocery notes:\n${warnings.join('\n')}"),
+          duration: const Duration(seconds: 10),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final MealPlanController c = widget.controller;
@@ -75,7 +91,7 @@ class _MealPlanScreenState extends State<MealPlanScreen> {
               if (c.mealPlans.isNotEmpty)
                 FilledButton.tonal(onPressed: _createMealPlan, child: const Text("New meal plan")),
               FilledButton.tonal(
-                onPressed: c.selectedMealPlanId == null ? null : c.generateGroceryForSelectedMealPlan,
+                onPressed: c.selectedMealPlanId == null ? null : () => _runGrocery(c.generateGroceryForSelectedMealPlan),
                 child: const Text("Generate grocery"),
               ),
               FilledButton.tonal(
@@ -83,7 +99,7 @@ class _MealPlanScreenState extends State<MealPlanScreen> {
                 child: const Text("Delete meal plan"),
               ),
               FilledButton.tonal(
-                onPressed: c.selectedMealPlanId == null ? null : c.generateGroceryForCurrentWeek,
+                onPressed: c.selectedMealPlanId == null ? null : () => _runGrocery(c.generateGroceryForCurrentWeek),
                 child: const Text("Grocery this week"),
               ),
               FilledButton.tonal(
@@ -791,7 +807,7 @@ class _MealPlanScreenState extends State<MealPlanScreen> {
       ),
     );
     if (confirmed == true) {
-      await widget.controller.regenerateGroceryForSelectedMealPlan();
+      await _runGrocery(widget.controller.regenerateGroceryForSelectedMealPlan);
     }
   }
 
@@ -818,7 +834,9 @@ class _MealPlanScreenState extends State<MealPlanScreen> {
       ),
     );
     if (ok == true) {
-      await widget.controller.generateGroceryForDateRange(start.text.trim(), end.text.trim());
+      await _runGrocery(
+        () => widget.controller.generateGroceryForDateRange(start.text.trim(), end.text.trim()),
+      );
     }
   }
 

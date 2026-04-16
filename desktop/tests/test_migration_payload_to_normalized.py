@@ -33,7 +33,7 @@ def test_migrates_payload_table_to_normalized(tmp_path: Path) -> None:
         conn.commit()
 
         version = apply_migrations(conn, utc_now_iso())
-        assert version == 11
+        assert version == 13
         tables = {
             row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }

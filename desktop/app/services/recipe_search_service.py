@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from desktop.app.domain.models import Recipe
 
 
+def _normalize_match_text(text: str) -> str:
+    return " ".join(text.strip().lower().split())
+
+
 @dataclass(slots=True)
 class RecipeSearchFilters:
     scope: str | None = None  # local | bundled | forked
@@ -17,51 +21,101 @@ class RecipeSearchFilters:
     prep_minutes_max: int | None = None
     cook_minutes_max: int | None = None
     tags: list[str] | None = None
+    # When True and query is non-empty, recipe must match via ingredient raw_text, structured name, or linked catalog name.
+    ingredient_focus: bool = False
 
 
 @dataclass(slots=True)
 class RecipeSearchResult:
     recipe: Recipe
     score: int
+    match_hints: tuple[str, ...] = ()
 
 
 class RecipeSearchService:
-    def search(self, recipes: list[Recipe], query: str, filters: RecipeSearchFilters | None = None) -> list[RecipeSearchResult]:
+    def search(
+        self,
+        recipes: list[Recipe],
+        query: str,
+        filters: RecipeSearchFilters | None = None,
+        *,
+        catalog_names_by_id: dict[str, str] | None = None,
+    ) -> list[RecipeSearchResult]:
         normalized_query = query.strip().lower()
+        norm_query_folded = _normalize_match_text(query) if query.strip() else ""
         filters = filters or RecipeSearchFilters()
+        catalog_names_by_id = catalog_names_by_id or {}
         results: list[RecipeSearchResult] = []
         for recipe in recipes:
             if not self._matches_filters(recipe, filters):
                 continue
-            score = self._score_recipe(recipe, normalized_query)
+            score, ing_score, hints = self._score_recipe(recipe, normalized_query, norm_query_folded, catalog_names_by_id)
+            if filters.ingredient_focus and normalized_query and ing_score == 0:
+                continue
             if normalized_query and score == 0:
                 continue
-            results.append(RecipeSearchResult(recipe=recipe, score=score))
+            results.append(RecipeSearchResult(recipe=recipe, score=score, match_hints=hints))
         results.sort(key=lambda item: (-item.score, item.recipe.title.lower(), item.recipe.id))
         return results
 
-    def _score_recipe(self, recipe: Recipe, query: str) -> int:
+    def _score_recipe(
+        self,
+        recipe: Recipe,
+        query: str,
+        norm_query_folded: str,
+        catalog_names_by_id: dict[str, str],
+    ) -> tuple[int, int, tuple[str, ...]]:
+        """Returns (total_score, ingredient_match_score, sorted hint labels for subtle UI)."""
         if not query:
-            return 1
+            return 1, 0, ()
         score = 0
+        ing_score = 0
+        hints: set[str] = set()
         if query in recipe.title.lower():
             score += 50
         if recipe.subtitle and query in recipe.subtitle.lower():
             score += 25
+            hints.add("subtitle")
         if recipe.author and query in recipe.author.lower():
             score += 15
+            hints.add("author")
+        for tag in recipe.tags:
+            t = tag.strip().lower()
+            if query in t or (norm_query_folded and norm_query_folded in _normalize_match_text(tag)):
+                score += 24
+                hints.add("tag")
         for ingredient in recipe.ingredients:
-            if query in ingredient.raw_text.lower():
+            raw_l = ingredient.raw_text.lower()
+            if query in raw_l or (norm_query_folded and norm_query_folded in _normalize_match_text(ingredient.raw_text)):
                 score += 20
-            if ingredient.ingredient_name and query in ingredient.ingredient_name.lower():
-                score += 15
+                ing_score += 20
+                hints.add("ingredient")
+            if ingredient.ingredient_name:
+                iname = ingredient.ingredient_name.lower()
+                if query in iname or (
+                    norm_query_folded and norm_query_folded in _normalize_match_text(ingredient.ingredient_name)
+                ):
+                    score += 15
+                    ing_score += 15
+                    hints.add("ingredient")
+            cid = ingredient.catalog_ingredient_id
+            if cid:
+                cname = catalog_names_by_id.get(cid)
+                if cname:
+                    cn_l = cname.lower()
+                    if query in cn_l or (norm_query_folded and norm_query_folded in _normalize_match_text(cname)):
+                        score += 22
+                        ing_score += 22
+                        hints.add("catalog")
         for equipment in recipe.equipment:
             if query in equipment.name.lower():
                 score += 15
+                hints.add("equipment")
         for step in recipe.steps:
             if query in step.body_text.lower():
                 score += 10
-        return score
+                hints.add("step")
+        return score, ing_score, tuple(sorted(hints))
 
     def _matches_filters(self, recipe: Recipe, filters: RecipeSearchFilters) -> bool:
         if filters.scope == "local" and recipe.scope != "local":

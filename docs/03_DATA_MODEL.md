@@ -15,9 +15,10 @@
 - `recipes`: local recipe metadata and top-level fields (`entity_version`, timestamps, soft delete).
 - `recipe_equipment`: equipment items linked by `recipe_id`.
 - `global_equipment`: user-owned reusable equipment library (name, optional notes/media); synced like other user entities.
+- `catalog_ingredient`: user-owned reusable **ingredient identity** library (`name`, `normalized_name` for case/whitespace-tolerant matching, optional `notes`); synced like other user-owned global rows.
 - `tags`: normalized tag definitions (`name`, optional `color`).
 - `recipe_tags`: join table (`recipe_id`, `tag_id`) kept in sync with recipe tag assignments.
-- `recipe_ingredients`: ingredient items linked by `recipe_id`, preserving `raw_text` + structured fields.
+- `recipe_ingredients`: ingredient items linked by `recipe_id`, preserving `raw_text` + structured fields; optional `catalog_ingredient_id` for reuse/search without making the catalog the display source of truth for past saves; optional **sub-recipe** columns (`sub_recipe_id`, `sub_recipe_usage_type`, `sub_recipe_multiplier`, `sub_recipe_display_name`) when a line references another recipe as a component (see `RecipeIngredientItem` below).
 - `recipe_steps`: ordered execution steps linked by `recipe_id`.
 - `step_links`: link anchors for step references linked by `step_id`.
 - `step_timers`: timer definitions linked by `step_id`.
@@ -99,6 +100,20 @@ All child tables include:
 - `media_id` nullable
 - `is_optional`
 - `display_order`
+- `catalog_ingredient_id` nullable — optional link to `catalog_ingredient` when the line was chosen from or saved to the shared library; **the recipe row’s `raw_text` (and structured fields) remain the snapshot** for that recipe. Editing a catalog row does not rewrite linked recipe rows. **Mutually exclusive** with sub-recipe fields in validation: a line cannot be both a catalog-linked normal ingredient and a sub-recipe reference.
+- **Sub-recipe reference** (optional composable recipes, migration **v13** / mobile **schema 13**):
+  - `sub_recipe_id` — UUID of another **local** recipe row (stable id); live reference for grocery expansion (missing rows still show `raw_text` / `sub_recipe_display_name`).
+  - `sub_recipe_usage_type` — `full_batch` (implicit 1× of the referenced recipe’s ingredient set) or `fraction_of_batch` (requires a positive `sub_recipe_multiplier`, e.g. `0.5`, `2.0`). No arbitrary unit conversion (e.g. “1 cup of sauce”) in this version.
+  - `sub_recipe_multiplier` — used only for `fraction_of_batch`; ignored / null for `full_batch`.
+  - `sub_recipe_display_name` — optional snapshot label (e.g. recipe title) for UX when the referenced recipe is missing or for clarity in lists.
+- A recipe **must not** reference itself as `sub_recipe_id` on any ingredient (validation error).
+
+## `CatalogIngredient` (library)
+
+- `id`, `name`, `normalized_name` (derived for matching), `notes` nullable
+- `entity_version`, `created_at`, `updated_at`, `deleted_at` nullable
+- Sync entity type: `catalog_ingredient`
+- **Future expansion** (not implemented yet): nutrition, media, aliases — the catalog is intentionally identity + notes only in this phase.
 
 ## `RecipeStep`
 
@@ -376,6 +391,8 @@ This preserves portability lineage without implying bundled ownership.
 
 ## Migration Note
 
+**Mobile (`genesis_mobile`)** applies parallel additive migrations in `lib/data/db/app_database.dart`; as of **schema v13** mobile includes sub-recipe columns on `recipe_ingredients`, plus **v12** `catalog_ingredient` / `catalog_ingredient_id`, **v11** `global_equipment`, `tags`, `recipe_tags`, `recipe_equipment.global_equipment_id`, `recipes.tags_json`, and `step_timers.alert_vibrate`, consistent with desktop migrations.
+
 Migration v2 converts legacy `local_recipes.payload_json` rows into normalized tables and removes the legacy table to prevent competing sources of truth.
 
 Migration v3 adds provenance and export metadata columns on local recipes to support bundled packaging workflows and safe fork tracking.
@@ -389,6 +406,11 @@ Migration v5 adds meal-planning and grocery snapshot tables (`meal_plans`, `meal
 - Scale factor per meal plan item is `servings_override / recipe.servings` when both are present and positive.
 - Structured ingredient quantities (`quantity_value`) are scaled numerically.
 - Raw-text-only ingredients remain unchanged.
+- **Sub-recipe lines** do not contribute their own quantity to grocery as a single merged “ingredient”; grocery expansion **replaces** each sub-recipe line with the **plain ingredients** of the referenced recipe, multiplied by:
+  - meal-plan scale factor × `1.0` for `full_batch`, or
+  - meal-plan scale factor × `sub_recipe_multiplier` for `fraction_of_batch`.
+- Expansion is **depth-limited** (max 24 levels) and **cycle-safe** (if the same recipe id reappears on the active path, that branch is skipped and a warning is recorded).
+- If `sub_recipe_id` points to a recipe that does not exist locally, expansion emits a deterministic placeholder row (`[Missing recipe] …`) and warnings; the parent line’s `raw_text` / display snapshot remains visible in the recipe.
 - Grocery grouping key is deterministic:
   - normalized `ingredient_name` when present, else normalized `raw_text`
   - plus normalized `unit`

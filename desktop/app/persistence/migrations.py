@@ -653,6 +653,42 @@ def _migration_v11(conn: sqlite3.Connection, now_iso: str) -> None:
     conn.commit()
 
 
+def _migration_v12(conn: sqlite3.Connection, now_iso: str) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS catalog_ingredient (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          normalized_name TEXT NOT NULL,
+          notes TEXT NULL,
+          entity_version INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_catalog_ingredient_updated ON catalog_ingredient(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_catalog_ingredient_normalized ON catalog_ingredient(normalized_name);
+        """
+    )
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(recipe_ingredients)").fetchall()}
+    if "catalog_ingredient_id" not in cols:
+        conn.execute("ALTER TABLE recipe_ingredients ADD COLUMN catalog_ingredient_id TEXT NULL")
+    conn.commit()
+
+
+def _migration_v13(conn: sqlite3.Connection, now_iso: str) -> None:
+    cols = {row["name"] for row in conn.execute("PRAGMA table_info(recipe_ingredients)").fetchall()}
+    if "sub_recipe_id" not in cols:
+        conn.execute("ALTER TABLE recipe_ingredients ADD COLUMN sub_recipe_id TEXT NULL")
+    if "sub_recipe_usage_type" not in cols:
+        conn.execute("ALTER TABLE recipe_ingredients ADD COLUMN sub_recipe_usage_type TEXT NULL")
+    if "sub_recipe_multiplier" not in cols:
+        conn.execute("ALTER TABLE recipe_ingredients ADD COLUMN sub_recipe_multiplier REAL NULL")
+    if "sub_recipe_display_name" not in cols:
+        conn.execute("ALTER TABLE recipe_ingredients ADD COLUMN sub_recipe_display_name TEXT NULL")
+    conn.commit()
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection, str], None]] = {
     1: _migration_v1,
     2: _migration_v2,
@@ -665,6 +701,8 @@ MIGRATIONS: dict[int, Callable[[sqlite3.Connection, str], None]] = {
     9: _migration_v9,
     10: _migration_v10,
     11: _migration_v11,
+    12: _migration_v12,
+    13: _migration_v13,
 }
 
 

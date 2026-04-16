@@ -3,11 +3,16 @@ import "dart:io";
 
 import "package:path/path.dart" as p;
 import "package:sqflite/sqflite.dart";
+import "package:uuid/uuid.dart";
 
 import "../db/app_database.dart";
 import "../models/recipe_models.dart";
 import "recipe_editor_repository_port.dart";
 import "repository_ports.dart";
+
+String _searchNormalize(String text) {
+  return text.trim().toLowerCase().replaceAll(RegExp(r"\s+"), " ");
+}
 
 class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorRepositoryPort {
   final AppDatabase _database;
@@ -29,6 +34,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
             id: row["id"]! as String,
             title: row["title"]! as String,
             subtitle: row["subtitle"] as String?,
+            author: row["author"] as String?,
             scope: row["scope"]! as String,
             status: row["status"]! as String,
             updatedAt: row["updated_at"] as String?,
@@ -38,26 +44,40 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
             openCount: (row["open_count"] as int?) ?? 0,
             cookCount: (row["cook_count"] as int?) ?? 0,
             coverMediaId: row["cover_media_id"] as String?,
+            tags: _parseTagsJson(row["tags_json"] as String?),
           ),
         )
         .toList();
   }
 
+  @override
+  Future<List<RecipeSummary>> listLocalRecipesForSubRecipePicker({required String excludeRecipeId}) async {
+    final List<RecipeSummary> all = await listRecipes();
+    return all.where((RecipeSummary r) => r.scope == "local" && r.id != excludeRecipeId).toList();
+  }
+
+  Future<List<String>> listTagNamesForFilter() async {
+    final Database db = await _database.database;
+    final List<Map<String, Object?>> rows = await db.query(
+      "tags",
+      columns: <String>["name"],
+      where: "deleted_at IS NULL",
+      orderBy: "name COLLATE NOCASE ASC",
+    );
+    return rows.map((Map<String, Object?> row) => row["name"]! as String).toList();
+  }
+
   Future<List<RecipeSummary>> searchRecipes({
     String query = "",
     String scope = "all",
+    List<String> tagsMatchAll = const <String>[],
+    bool ingredientFocus = false,
   }) async {
     final List<RecipeSummary> all = await listRecipes();
     final String q = query.trim().toLowerCase();
-    int score(RecipeSummary recipe) {
-      int total = 0;
-      if (q.isEmpty) {
-        return 1;
-      }
-      if (recipe.title.toLowerCase().contains(q)) total += 50;
-      if ((recipe.subtitle ?? "").toLowerCase().contains(q)) total += 20;
-      return total;
-    }
+    final String qFolded = _searchNormalize(query);
+    final Set<String> requiredTags =
+        tagsMatchAll.map((String t) => t.trim().toLowerCase()).where((String t) => t.isNotEmpty).toSet();
 
     bool scopeMatch(RecipeSummary recipe) {
       if (scope == "all") return true;
@@ -66,14 +86,155 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
       return recipe.scope == scope;
     }
 
-    final List<RecipeSummary> filtered =
-        all.where((RecipeSummary recipe) => scopeMatch(recipe) && (q.isEmpty || score(recipe) > 0)).toList();
-    filtered.sort((RecipeSummary a, RecipeSummary b) {
-      final int byScore = score(b).compareTo(score(a));
+    bool tagsMatch(RecipeSummary recipe) {
+      if (requiredTags.isEmpty) return true;
+      final Set<String> have = recipe.tags.map((String t) => t.trim().toLowerCase()).toSet();
+      return requiredTags.every(have.contains);
+    }
+
+    final List<RecipeSummary> candidates = all.where((RecipeSummary r) => scopeMatch(r) && tagsMatch(r)).toList();
+    if (candidates.isEmpty) {
+      return <RecipeSummary>[];
+    }
+
+    if (q.isEmpty) {
+      candidates.sort((RecipeSummary a, RecipeSummary b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+      return candidates;
+    }
+
+    final Set<String> ids = candidates.map((RecipeSummary r) => r.id).toSet();
+    final Map<String, String> catalogNames = await _catalogIdToNameMap();
+    final Map<String, List<_IngredientSearchRow>> ings = await _ingredientRowsByRecipeId(ids);
+    final Map<String, List<String>> equipmentByRecipe = await _equipmentNamesByRecipeId(ids);
+    final Map<String, List<String>> stepBodiesByRecipe = await _stepBodiesByRecipeId(ids);
+
+    final List<_ScoredSummary> scored = <_ScoredSummary>[];
+    for (final RecipeSummary recipe in candidates) {
+      final _SearchScore s = _scoreRecipeForLibrarySearch(
+        recipe: recipe,
+        query: q,
+        queryFolded: qFolded,
+        catalogNamesById: catalogNames,
+        ingredients: ings[recipe.id] ?? const <_IngredientSearchRow>[],
+        equipmentNames: equipmentByRecipe[recipe.id] ?? const <String>[],
+        stepBodies: stepBodiesByRecipe[recipe.id] ?? const <String>[],
+        ingredientFocus: ingredientFocus,
+      );
+      if (!s.keep) {
+        continue;
+      }
+      final String? hint = s.hints.isEmpty ? null : s.hints.map(_hintLabel).join(" · ");
+      scored.add(
+        _ScoredSummary(
+          RecipeSummary(
+            id: recipe.id,
+            title: recipe.title,
+            subtitle: recipe.subtitle,
+            author: recipe.author,
+            scope: recipe.scope,
+            status: recipe.status,
+            updatedAt: recipe.updatedAt,
+            isFavorite: recipe.isFavorite,
+            lastOpenedAt: recipe.lastOpenedAt,
+            lastCookedAt: recipe.lastCookedAt,
+            openCount: recipe.openCount,
+            cookCount: recipe.cookCount,
+            coverMediaId: recipe.coverMediaId,
+            tags: recipe.tags,
+            searchMatchHint: hint,
+          ),
+          s.score,
+        ),
+      );
+    }
+    scored.sort((_ScoredSummary a, _ScoredSummary b) {
+      final int byScore = b.score.compareTo(a.score);
       if (byScore != 0) return byScore;
-      return a.title.toLowerCase().compareTo(b.title.toLowerCase());
+      return a.summary.title.toLowerCase().compareTo(b.summary.title.toLowerCase());
     });
-    return filtered;
+    return scored.map((_ScoredSummary e) => e.summary).toList();
+  }
+
+  Future<Map<String, String>> _catalogIdToNameMap() async {
+    final Database db = await _database.database;
+    final List<Map<String, Object?>> rows = await db.query(
+      "catalog_ingredient",
+      columns: <String>["id", "name"],
+      where: "deleted_at IS NULL",
+    );
+    return <String, String>{
+      for (final Map<String, Object?> row in rows) row["id"]! as String: row["name"]! as String,
+    };
+  }
+
+  Future<Map<String, List<_IngredientSearchRow>>> _ingredientRowsByRecipeId(Set<String> recipeIds) async {
+    if (recipeIds.isEmpty) {
+      return <String, List<_IngredientSearchRow>>{};
+    }
+    final Database db = await _database.database;
+    final String placeholders = List<String>.filled(recipeIds.length, "?").join(",");
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      """
+      SELECT recipe_id, raw_text, ingredient_name, catalog_ingredient_id
+      FROM recipe_ingredients
+      WHERE deleted_at IS NULL AND recipe_id IN ($placeholders)
+      """,
+      recipeIds.toList(),
+    );
+    final Map<String, List<_IngredientSearchRow>> out = <String, List<_IngredientSearchRow>>{};
+    for (final Map<String, Object?> row in rows) {
+      final String rid = row["recipe_id"]! as String;
+      out.putIfAbsent(rid, () => <_IngredientSearchRow>[]).add(
+            _IngredientSearchRow(
+              rawText: row["raw_text"]! as String,
+              ingredientName: row["ingredient_name"] as String?,
+              catalogIngredientId: row["catalog_ingredient_id"] as String?,
+            ),
+          );
+    }
+    return out;
+  }
+
+  Future<Map<String, List<String>>> _equipmentNamesByRecipeId(Set<String> recipeIds) async {
+    if (recipeIds.isEmpty) {
+      return <String, List<String>>{};
+    }
+    final Database db = await _database.database;
+    final String placeholders = List<String>.filled(recipeIds.length, "?").join(",");
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      """
+      SELECT recipe_id, name FROM recipe_equipment
+      WHERE deleted_at IS NULL AND recipe_id IN ($placeholders)
+      """,
+      recipeIds.toList(),
+    );
+    final Map<String, List<String>> out = <String, List<String>>{};
+    for (final Map<String, Object?> row in rows) {
+      final String rid = row["recipe_id"]! as String;
+      out.putIfAbsent(rid, () => <String>[]).add(row["name"]! as String);
+    }
+    return out;
+  }
+
+  Future<Map<String, List<String>>> _stepBodiesByRecipeId(Set<String> recipeIds) async {
+    if (recipeIds.isEmpty) {
+      return <String, List<String>>{};
+    }
+    final Database db = await _database.database;
+    final String placeholders = List<String>.filled(recipeIds.length, "?").join(",");
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      """
+      SELECT recipe_id, body_text FROM recipe_steps
+      WHERE deleted_at IS NULL AND recipe_id IN ($placeholders)
+      """,
+      recipeIds.toList(),
+    );
+    final Map<String, List<String>> out = <String, List<String>>{};
+    for (final Map<String, Object?> row in rows) {
+      final String rid = row["recipe_id"]! as String;
+      out.putIfAbsent(rid, () => <String>[]).add(row["body_text"]! as String);
+    }
+    return out;
   }
 
   @override
@@ -134,6 +295,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
               durationSeconds: timerRow["duration_seconds"]! as int,
               autoStart: (timerRow["auto_start"]! as int) == 1,
               alertSoundKey: timerRow["alert_sound_key"] as String?,
+              alertVibrate: (timerRow["alert_vibrate"] as int? ?? 0) == 1,
             ),
           )
           .toList();
@@ -152,6 +314,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
       );
     }
 
+    final List<String> tags = _parseTagsJson(recipeRow["tags_json"] as String?);
     return RecipeDetail(
       id: recipeId,
       title: recipeRow["title"]! as String,
@@ -168,6 +331,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
       cookMinutes: recipeRow["cook_minutes"] as int?,
       totalMinutes: recipeRow["total_minutes"] as int?,
       coverMediaId: recipeRow["cover_media_id"] as String?,
+      tags: tags,
       equipment: eqRows
           .map(
             (Map<String, Object?> row) => RecipeEquipmentItem(
@@ -178,6 +342,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
               notes: row["notes"] as String?,
               affiliateUrl: row["affiliate_url"] as String?,
               mediaId: row["media_id"] as String?,
+              globalEquipmentId: row["global_equipment_id"] as String?,
               isRequired: (row["is_required"]! as int) == 1,
               displayOrder: row["display_order"]! as int,
             ),
@@ -197,6 +362,11 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
               mediaId: row["media_id"] as String?,
               isOptional: (row["is_optional"]! as int) == 1,
               displayOrder: row["display_order"]! as int,
+              catalogIngredientId: row["catalog_ingredient_id"] as String?,
+              subRecipeId: row["sub_recipe_id"] as String?,
+              subRecipeUsageType: row["sub_recipe_usage_type"] as String?,
+              subRecipeMultiplier: (row["sub_recipe_multiplier"] as num?)?.toDouble(),
+              subRecipeDisplayName: row["sub_recipe_display_name"] as String?,
             ),
           )
           .toList(),
@@ -239,11 +409,13 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
           "total_minutes": recipe.totalMinutes,
           "cover_media_id": recipe.coverMediaId,
           "status": recipe.status,
+          "tags_json": jsonEncode(recipe.tags),
           "updated_at": updatedAt,
           "deleted_at": null,
         },
         conflictAlgorithm: ConflictAlgorithm.replace,
       );
+      await _syncRecipeTags(txn, recipe.id, recipe.tags, updatedAt);
       await txn.delete("recipe_equipment", where: "recipe_id = ?", whereArgs: <Object>[recipe.id]);
       await txn.delete("recipe_ingredients", where: "recipe_id = ?", whereArgs: <Object>[recipe.id]);
       final List<String> stepIds = recipe.steps.map((RecipeStep s) => s.id).toList();
@@ -263,6 +435,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
           "notes": item.notes,
           "affiliate_url": item.affiliateUrl,
           "media_id": item.mediaId,
+          "global_equipment_id": item.globalEquipmentId,
           "is_required": item.isRequired ? 1 : 0,
           "display_order": item.displayOrder,
         });
@@ -280,6 +453,11 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
           "media_id": item.mediaId,
           "is_optional": item.isOptional ? 1 : 0,
           "display_order": item.displayOrder,
+          "catalog_ingredient_id": item.catalogIngredientId,
+          "sub_recipe_id": item.subRecipeId,
+          "sub_recipe_usage_type": item.subRecipeUsageType,
+          "sub_recipe_multiplier": item.subRecipeMultiplier,
+          "sub_recipe_display_name": item.subRecipeDisplayName,
         });
       }
       for (final RecipeStep step in recipe.steps) {
@@ -301,6 +479,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
             "duration_seconds": timer.durationSeconds,
             "auto_start": timer.autoStart ? 1 : 0,
             "alert_sound_key": timer.alertSoundKey,
+            "alert_vibrate": timer.alertVibrate ? 1 : 0,
           });
         }
       }
@@ -380,10 +559,12 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
             id: row["id"]! as String,
             title: row["title"]! as String,
             subtitle: row["subtitle"] as String?,
+            author: row["author"] as String?,
             scope: row["scope"]! as String,
             status: row["status"]! as String,
             updatedAt: row["updated_at"] as String?,
             coverMediaId: row["cover_media_id"] as String?,
+            tags: _parseTagsJson(row["tags_json"] as String?),
           ),
         )
         .toList();
@@ -403,10 +584,12 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
             id: row["id"]! as String,
             title: row["title"]! as String,
             subtitle: row["subtitle"] as String?,
+            author: row["author"] as String?,
             scope: row["scope"]! as String,
             status: row["status"]! as String,
             updatedAt: row["updated_at"] as String?,
             coverMediaId: row["cover_media_id"] as String?,
+            tags: _parseTagsJson(row["tags_json"] as String?),
           ),
         )
         .toList();
@@ -923,6 +1106,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
             id: row["id"]! as String,
             title: row["title"]! as String,
             subtitle: row["subtitle"] as String?,
+            author: row["author"] as String?,
             scope: row["scope"]! as String,
             status: row["status"]! as String,
             updatedAt: row["updated_at"] as String?,
@@ -932,6 +1116,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
             openCount: (row["open_count"] as int?) ?? 0,
             cookCount: (row["cook_count"] as int?) ?? 0,
             coverMediaId: row["cover_media_id"] as String?,
+            tags: _parseTagsJson(row["tags_json"] as String?),
           ),
         )
         .toList();
@@ -1373,6 +1558,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
       "total_minutes": recipe.totalMinutes,
       "cover_media_id": recipe.coverMediaId,
       "status": recipe.status,
+      "tags": recipe.tags,
       "equipment": recipe.equipment
           .map(
             (RecipeEquipmentItem item) => <String, dynamic>{
@@ -1382,6 +1568,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
               "notes": item.notes,
               "affiliate_url": item.affiliateUrl,
               "media_id": item.mediaId,
+              "global_equipment_id": item.globalEquipmentId,
               "is_required": item.isRequired,
               "display_order": item.displayOrder,
             },
@@ -1400,6 +1587,11 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
               "media_id": item.mediaId,
               "is_optional": item.isOptional,
               "display_order": item.displayOrder,
+              "catalog_ingredient_id": item.catalogIngredientId,
+              "sub_recipe_id": item.subRecipeId,
+              "sub_recipe_usage_type": item.subRecipeUsageType,
+              "sub_recipe_multiplier": item.subRecipeMultiplier,
+              "sub_recipe_display_name": item.subRecipeDisplayName,
             },
           )
           .toList(),
@@ -1421,6 +1613,7 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
                       "duration_seconds": timer.durationSeconds,
                       "auto_start": timer.autoStart,
                       "alert_sound_key": timer.alertSoundKey,
+                      "alert_vibrate": timer.alertVibrate,
                     },
                   )
                   .toList(),
@@ -1442,5 +1635,516 @@ class RecipeRepository implements RecipeReadRepositoryPort, RecipeEditorReposito
           .toList(),
     };
   }
+
+  List<String> _parseTagsJson(String? raw) {
+    if (raw == null || raw.isEmpty) {
+      return <String>[];
+    }
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! List<dynamic>) {
+        return <String>[];
+      }
+      return decoded.map((dynamic e) => e.toString()).where((String s) => s.trim().isNotEmpty).toList();
+    } catch (_) {
+      return <String>[];
+    }
+  }
+
+  Future<void> _syncRecipeTags(Transaction txn, String recipeId, List<String> tagNames, String updatedAtUtc) async {
+    final Uuid uuid = const Uuid();
+    final Set<String> seen = <String>{};
+    final List<String> ordered = <String>[];
+    for (final String raw in tagNames) {
+      final String name = raw.trim();
+      if (name.isEmpty) {
+        continue;
+      }
+      final String key = name.toLowerCase();
+      if (seen.contains(key)) {
+        continue;
+      }
+      seen.add(key);
+      ordered.add(name);
+    }
+    await txn.delete("recipe_tags", where: "recipe_id = ?", whereArgs: <Object>[recipeId]);
+    for (final String name in ordered) {
+      final List<Map<String, Object?>> found = await txn.rawQuery(
+        "SELECT id, deleted_at FROM tags WHERE lower(name) = lower(?) LIMIT 1",
+        <Object>[name],
+      );
+      late final String tid;
+      if (found.isEmpty) {
+        tid = uuid.v4();
+        await txn.insert("tags", <String, Object?>{
+          "id": tid,
+          "name": name,
+          "color": null,
+          "entity_version": 1,
+          "created_at": updatedAtUtc,
+          "updated_at": updatedAtUtc,
+          "deleted_at": null,
+        });
+      } else {
+        tid = found.first["id"]! as String;
+        if (found.first["deleted_at"] != null) {
+          await txn.rawUpdate(
+            "UPDATE tags SET deleted_at = NULL, name = ?, updated_at = ?, entity_version = entity_version + 1 WHERE id = ?",
+            <Object>[name, updatedAtUtc, tid],
+          );
+        }
+      }
+      await txn.insert(
+        "recipe_tags",
+        <String, Object?>{"recipe_id": recipeId, "tag_id": tid},
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    }
+  }
+
+  @override
+  Future<List<GlobalEquipmentSummary>> listGlobalEquipmentForPicker() async {
+    final Database db = await _database.database;
+    final List<Map<String, Object?>> rows = await db.query(
+      "global_equipment",
+      where: "deleted_at IS NULL",
+      orderBy: "name COLLATE NOCASE ASC",
+    );
+    return rows
+        .map(
+          (Map<String, Object?> row) => GlobalEquipmentSummary(
+            id: row["id"]! as String,
+            name: row["name"]! as String,
+            notes: row["notes"] as String?,
+            mediaId: row["media_id"] as String?,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<String> createGlobalEquipmentRecord({required String name, String? notes}) async {
+    final Database db = await _database.database;
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError("global equipment name cannot be empty");
+    }
+    final String id = const Uuid().v4();
+    final String now = DateTime.now().toUtc().toIso8601String();
+    await db.insert("global_equipment", <String, Object?>{
+      "id": id,
+      "name": trimmed,
+      "notes": notes,
+      "media_id": null,
+      "entity_version": 1,
+      "created_at": now,
+      "updated_at": now,
+      "deleted_at": null,
+    });
+    return id;
+  }
+
+  Future<List<Map<String, dynamic>>> listGlobalEquipmentChangesSince(String? sinceCursor) async {
+    final Database db = await _database.database;
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      """
+      SELECT id, name, notes, media_id, entity_version, created_at, updated_at, deleted_at
+      FROM global_equipment
+      WHERE (? IS NULL OR updated_at > ?)
+      ORDER BY updated_at ASC
+      """,
+      <Object?>[sinceCursor, sinceCursor],
+    );
+    return rows.map((Map<String, Object?> row) {
+      final bool isTombstone = row["deleted_at"] != null;
+      final int ev = (row["entity_version"] as int?) ?? 1;
+      return <String, dynamic>{
+        "entity_type": "global_equipment",
+        "entity_id": row["id"]! as String,
+        "op": isTombstone ? "delete" : "upsert",
+        "entity_version": ev,
+        "updated_at_utc": row["updated_at"]! as String,
+        "source_scope": "local",
+        "body": isTombstone
+            ? null
+            : <String, dynamic>{
+                "id": row["id"]! as String,
+                "name": row["name"]! as String,
+                "notes": row["notes"],
+                "media_id": row["media_id"],
+                "entity_version": ev,
+                "created_at": row["created_at"]! as String,
+                "updated_at": row["updated_at"]! as String,
+              },
+      };
+    }).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> listTagChangesSince(String? sinceCursor) async {
+    final Database db = await _database.database;
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      """
+      SELECT id, name, color, entity_version, created_at, updated_at, deleted_at
+      FROM tags
+      WHERE (? IS NULL OR updated_at > ?)
+      ORDER BY updated_at ASC
+      """,
+      <Object?>[sinceCursor, sinceCursor],
+    );
+    return rows.map((Map<String, Object?> row) {
+      final bool isTombstone = row["deleted_at"] != null;
+      final int ev = (row["entity_version"] as int?) ?? 1;
+      return <String, dynamic>{
+        "entity_type": "tag",
+        "entity_id": row["id"]! as String,
+        "op": isTombstone ? "delete" : "upsert",
+        "entity_version": ev,
+        "updated_at_utc": row["updated_at"]! as String,
+        "source_scope": "local",
+        "body": isTombstone
+            ? null
+            : <String, dynamic>{
+                "id": row["id"]! as String,
+                "name": row["name"]! as String,
+                "color": row["color"],
+                "entity_version": ev,
+                "created_at": row["created_at"]! as String,
+                "updated_at": row["updated_at"]! as String,
+              },
+      };
+    }).toList();
+  }
+
+  Future<void> upsertGlobalEquipmentFromSync(Map<String, dynamic> body, String updatedAtUtc) async {
+    final Database db = await _database.database;
+    await db.insert(
+      "global_equipment",
+      <String, Object?>{
+        "id": body["id"] as String,
+        "name": body["name"] as String,
+        "notes": body["notes"] as String?,
+        "media_id": body["media_id"] as String?,
+        "entity_version": (body["entity_version"] as num?)?.toInt() ?? 1,
+        "created_at": (body["created_at"] as String?) ?? updatedAtUtc,
+        "updated_at": updatedAtUtc,
+        "deleted_at": null,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> tombstoneGlobalEquipment(String id, String updatedAtUtc) async {
+    final Database db = await _database.database;
+    await db.update(
+      "global_equipment",
+      <String, Object?>{"deleted_at": updatedAtUtc, "updated_at": updatedAtUtc},
+      where: "id = ?",
+      whereArgs: <Object>[id],
+    );
+  }
+
+  Future<void> upsertTagFromSync(Map<String, dynamic> body, String updatedAtUtc) async {
+    final Database db = await _database.database;
+    await db.insert(
+      "tags",
+      <String, Object?>{
+        "id": body["id"] as String,
+        "name": body["name"] as String,
+        "color": body["color"] as String?,
+        "entity_version": (body["entity_version"] as num?)?.toInt() ?? 1,
+        "created_at": (body["created_at"] as String?) ?? updatedAtUtc,
+        "updated_at": updatedAtUtc,
+        "deleted_at": null,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> tombstoneTag(String id, String updatedAtUtc) async {
+    final Database db = await _database.database;
+    await db.update(
+      "tags",
+      <String, Object?>{"deleted_at": updatedAtUtc, "updated_at": updatedAtUtc},
+      where: "id = ?",
+      whereArgs: <Object>[id],
+    );
+  }
+
+  static String _normalizeCatalogName(String name) {
+    return name.trim().toLowerCase().replaceAll(RegExp(r"\s+"), " ");
+  }
+
+  @override
+  Future<List<CatalogIngredientSummary>> listCatalogIngredientsForPicker() async {
+    final Database db = await _database.database;
+    final List<Map<String, Object?>> rows = await db.query(
+      "catalog_ingredient",
+      where: "deleted_at IS NULL",
+      orderBy: "name COLLATE NOCASE ASC",
+    );
+    return rows
+        .map(
+          (Map<String, Object?> row) => CatalogIngredientSummary(
+            id: row["id"]! as String,
+            name: row["name"]! as String,
+            notes: row["notes"] as String?,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<List<CatalogIngredientSummary>> searchCatalogIngredients(String query, {int limit = 20}) async {
+    final String needle = _normalizeCatalogName(query);
+    if (needle.isEmpty) {
+      return const <CatalogIngredientSummary>[];
+    }
+    final Database db = await _database.database;
+    final String like = "%$needle%";
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      """
+      SELECT id, name, notes FROM catalog_ingredient
+      WHERE deleted_at IS NULL AND normalized_name LIKE ?
+      ORDER BY name COLLATE NOCASE ASC
+      LIMIT ?
+      """,
+      <Object>[like, limit],
+    );
+    return rows
+        .map(
+          (Map<String, Object?> row) => CatalogIngredientSummary(
+            id: row["id"]! as String,
+            name: row["name"]! as String,
+            notes: row["notes"] as String?,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<String> createCatalogIngredientRecord({required String name, String? notes}) async {
+    final Database db = await _database.database;
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError("catalog ingredient name cannot be empty");
+    }
+    final String id = const Uuid().v4();
+    final String now = DateTime.now().toUtc().toIso8601String();
+    final String norm = _normalizeCatalogName(trimmed);
+    await db.insert("catalog_ingredient", <String, Object?>{
+      "id": id,
+      "name": trimmed,
+      "normalized_name": norm,
+      "notes": notes,
+      "entity_version": 1,
+      "created_at": now,
+      "updated_at": now,
+      "deleted_at": null,
+    });
+    return id;
+  }
+
+  Future<List<Map<String, dynamic>>> listCatalogIngredientChangesSince(String? sinceCursor) async {
+    final Database db = await _database.database;
+    final List<Map<String, Object?>> rows = await db.rawQuery(
+      """
+      SELECT id, name, normalized_name, notes, entity_version, created_at, updated_at, deleted_at
+      FROM catalog_ingredient
+      WHERE (? IS NULL OR updated_at > ?)
+      ORDER BY updated_at ASC
+      """,
+      <Object?>[sinceCursor, sinceCursor],
+    );
+    return rows.map((Map<String, Object?> row) {
+      final bool isTombstone = row["deleted_at"] != null;
+      final int ev = (row["entity_version"] as int?) ?? 1;
+      return <String, dynamic>{
+        "entity_type": "catalog_ingredient",
+        "entity_id": row["id"]! as String,
+        "op": isTombstone ? "delete" : "upsert",
+        "entity_version": ev,
+        "updated_at_utc": row["updated_at"]! as String,
+        "source_scope": "local",
+        "body": isTombstone
+            ? null
+            : <String, dynamic>{
+                "id": row["id"]! as String,
+                "name": row["name"]! as String,
+                "normalized_name": row["normalized_name"]! as String,
+                "notes": row["notes"],
+                "entity_version": ev,
+                "created_at": row["created_at"]! as String,
+                "updated_at": row["updated_at"]! as String,
+              },
+      };
+    }).toList();
+  }
+
+  Future<void> upsertCatalogIngredientFromSync(Map<String, dynamic> body, String updatedAtUtc) async {
+    final Database db = await _database.database;
+    final String name = body["name"] as String;
+    final String normalized = (body["normalized_name"] as String?) ?? _normalizeCatalogName(name);
+    await db.insert(
+      "catalog_ingredient",
+      <String, Object?>{
+        "id": body["id"] as String,
+        "name": name,
+        "normalized_name": normalized,
+        "notes": body["notes"] as String?,
+        "entity_version": (body["entity_version"] as num?)?.toInt() ?? 1,
+        "created_at": (body["created_at"] as String?) ?? updatedAtUtc,
+        "updated_at": updatedAtUtc,
+        "deleted_at": null,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> tombstoneCatalogIngredient(String id, String updatedAtUtc) async {
+    final Database db = await _database.database;
+    await db.update(
+      "catalog_ingredient",
+      <String, Object?>{"deleted_at": updatedAtUtc, "updated_at": updatedAtUtc},
+      where: "id = ?",
+      whereArgs: <Object>[id],
+    );
+  }
 }
 
+class _IngredientSearchRow {
+  final String rawText;
+  final String? ingredientName;
+  final String? catalogIngredientId;
+
+  const _IngredientSearchRow({
+    required this.rawText,
+    this.ingredientName,
+    this.catalogIngredientId,
+  });
+}
+
+class _SearchScore {
+  final bool keep;
+  final int score;
+  final int ingredientScore;
+  final List<String> hints;
+
+  const _SearchScore({
+    required this.keep,
+    required this.score,
+    required this.ingredientScore,
+    required this.hints,
+  });
+}
+
+class _ScoredSummary {
+  final RecipeSummary summary;
+  final int score;
+
+  const _ScoredSummary(this.summary, this.score);
+}
+
+_SearchScore _scoreRecipeForLibrarySearch({
+  required RecipeSummary recipe,
+  required String query,
+  required String queryFolded,
+  required Map<String, String> catalogNamesById,
+  required List<_IngredientSearchRow> ingredients,
+  required List<String> equipmentNames,
+  required List<String> stepBodies,
+  required bool ingredientFocus,
+}) {
+  int score = 0;
+  int ingScore = 0;
+  final Set<String> hintSet = <String>{};
+  final String title = recipe.title.toLowerCase();
+  if (title.contains(query)) {
+    score += 50;
+  }
+  final String? sub = recipe.subtitle?.toLowerCase();
+  if (sub != null && sub.contains(query)) {
+    score += 25;
+    hintSet.add("subtitle");
+  }
+  final String? auth = recipe.author?.toLowerCase();
+  if (auth != null && auth.contains(query)) {
+    score += 15;
+    hintSet.add("author");
+  }
+  for (final String tag in recipe.tags) {
+    final String t = tag.trim().toLowerCase();
+    if (t.contains(query) || (queryFolded.isNotEmpty && _searchNormalize(tag).contains(queryFolded))) {
+      score += 24;
+      hintSet.add("tag");
+    }
+  }
+  for (final _IngredientSearchRow ing in ingredients) {
+    final String raw = ing.rawText.toLowerCase();
+    if (raw.contains(query) || (queryFolded.isNotEmpty && _searchNormalize(ing.rawText).contains(queryFolded))) {
+      score += 20;
+      ingScore += 20;
+      hintSet.add("ingredient");
+    }
+    final String? iname = ing.ingredientName?.toLowerCase();
+    if (iname != null &&
+        (iname.contains(query) ||
+            (queryFolded.isNotEmpty && _searchNormalize(ing.ingredientName!).contains(queryFolded)))) {
+      score += 15;
+      ingScore += 15;
+      hintSet.add("ingredient");
+    }
+    final String? cid = ing.catalogIngredientId;
+    if (cid != null) {
+      final String? cname = catalogNamesById[cid];
+      if (cname != null) {
+        final String cn = cname.toLowerCase();
+        if (cn.contains(query) || (queryFolded.isNotEmpty && _searchNormalize(cname).contains(queryFolded))) {
+          score += 22;
+          ingScore += 22;
+          hintSet.add("catalog");
+        }
+      }
+    }
+  }
+  for (final String name in equipmentNames) {
+    if (name.toLowerCase().contains(query)) {
+      score += 15;
+      hintSet.add("equipment");
+    }
+  }
+  for (final String body in stepBodies) {
+    if (body.toLowerCase().contains(query)) {
+      score += 10;
+      hintSet.add("step");
+    }
+  }
+  if (ingredientFocus && ingScore == 0) {
+    return const _SearchScore(keep: false, score: 0, ingredientScore: 0, hints: <String>[]);
+  }
+  if (score == 0) {
+    return _SearchScore(keep: false, score: 0, ingredientScore: ingScore, hints: const <String>[]);
+  }
+  final List<String> sortedHints = hintSet.toList()..sort();
+  return _SearchScore(keep: true, score: score, ingredientScore: ingScore, hints: sortedHints);
+}
+
+String _hintLabel(String key) {
+  switch (key) {
+    case "subtitle":
+      return "Subtitle";
+    case "author":
+      return "Author";
+    case "tag":
+      return "Tag";
+    case "ingredient":
+      return "Ingredient";
+    case "catalog":
+      return "Catalog item";
+    case "equipment":
+      return "Equipment";
+    case "step":
+      return "Step";
+    default:
+      return key;
+  }
+}

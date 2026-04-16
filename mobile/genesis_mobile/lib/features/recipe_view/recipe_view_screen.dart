@@ -11,6 +11,8 @@ class RecipeViewScreen extends StatefulWidget {
   final RecipeViewController controller;
   final TimerRuntimeController timerRuntimeController;
   final VoidCallback? onEditRequested;
+  /// Opens another recipe from a sub-recipe ingredient line (e.g. lasagna → béchamel).
+  final void Function(String recipeId)? onNavigateToSubRecipe;
 
   const RecipeViewScreen({
     super.key,
@@ -18,6 +20,7 @@ class RecipeViewScreen extends StatefulWidget {
     required this.controller,
     required this.timerRuntimeController,
     this.onEditRequested,
+    this.onNavigateToSubRecipe,
   });
 
   @override
@@ -120,7 +123,7 @@ class _RecipeViewScreenState extends State<RecipeViewScreen> with SingleTickerPr
               controller: _tabController,
               children: <Widget>[
                 _EquipmentTab(recipe: recipe),
-                _IngredientsTab(recipe: recipe),
+                _IngredientsTab(recipe: recipe, onNavigateToSubRecipe: widget.onNavigateToSubRecipe),
                 _StepsTab(
                   recipe: recipe,
                   timerRuntimeController: widget.timerRuntimeController,
@@ -164,8 +167,9 @@ class _EquipmentTab extends StatelessWidget {
 
 class _IngredientsTab extends StatelessWidget {
   final RecipeDetail recipe;
+  final void Function(String recipeId)? onNavigateToSubRecipe;
 
-  const _IngredientsTab({required this.recipe});
+  const _IngredientsTab({required this.recipe, this.onNavigateToSubRecipe});
 
   @override
   Widget build(BuildContext context) {
@@ -178,20 +182,25 @@ class _IngredientsTab extends StatelessWidget {
           if (item.unit != null && item.unit!.isNotEmpty) item.unit!,
           if (item.ingredientName != null && item.ingredientName!.isNotEmpty) item.ingredientName!,
         ].join(" ");
+        final bool isSub = item.subRecipeId != null && item.subRecipeId!.isNotEmpty;
+        final bool canOpenSub = isSub && onNavigateToSubRecipe != null;
         return ListTile(
           leading: Text("${index + 1}"),
           title: Text(item.rawText),
           subtitle: Text(<String>[
+            if (isSub) "Sub-recipe · expands for grocery",
             if (structured.isNotEmpty) structured,
             if (item.substitutions != null && item.substitutions!.isNotEmpty) "Substitute: ${item.substitutions}",
             if (item.preparationNotes != null && item.preparationNotes!.isNotEmpty) "Prep: ${item.preparationNotes}",
-            if (structured.isEmpty &&
+            if (!isSub &&
+                structured.isEmpty &&
                 (item.substitutions == null || item.substitutions!.isEmpty) &&
                 (item.preparationNotes == null || item.preparationNotes!.isEmpty))
               "Unstructured entry",
           ].join("\n")),
           trailing: Text(item.isOptional ? "Optional" : ""),
           isThreeLine: true,
+          onTap: canOpenSub ? () => onNavigateToSubRecipe!(item.subRecipeId!) : null,
         );
       },
     );

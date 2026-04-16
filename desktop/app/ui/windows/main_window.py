@@ -128,7 +128,7 @@ class MainWindow(QMainWindow):
 
         self.section_tabs = QTabWidget(center)
         self.equipment_panel = EquipmentPanel(self._editor_service, center)
-        self.ingredients_panel = IngredientsPanel(center)
+        self.ingredients_panel = IngredientsPanel(self._editor_service, center)
         self.steps_panel = StepsPanel(self._editor_service, center)
         self.section_tabs.addTab(self.equipment_panel, "Equipment")
         self.section_tabs.addTab(self.ingredients_panel, "Ingredients")
@@ -196,15 +196,22 @@ class MainWindow(QMainWindow):
         tags = self._editor_service.list_tag_names()
         self.library_panel.set_tag_filter_options(tags)
         self.metadata_panel.set_available_tags(tags)
-        self.library_panel.set_items(self._editor_service.list_library_items())
         self.library_panel.set_collections(self._editor_service.list_collections())
+        self._reapply_library_search()
 
-    def _on_search_changed(self, query: str, scope: str, tag_filters: list | None = None) -> None:
+    def _reapply_library_search(self) -> None:
+        q = self.library_panel.search_input.text().strip()
+        scope = self.library_panel.scope_filter.currentText()
+        tag_filters = self.library_panel.selected_tag_filters()
         filters = RecipeSearchFilters(
             scope=None if scope == "all" else scope,
             tags=list(tag_filters) if tag_filters else None,
+            ingredient_focus=self.library_panel.ingredient_focus_enabled(),
         )
-        self.library_panel.set_items(self._editor_service.search_library(query, filters))
+        self.library_panel.set_items(self._editor_service.search_library(q, filters))
+
+    def _on_search_changed(self, query: str, scope: str, tag_filters: list | None = None) -> None:
+        self._reapply_library_search()
 
     def _on_recipe_selected(self, recipe_id: str, source: str) -> None:
         if not self._ensure_safe_to_switch():
@@ -485,7 +492,7 @@ class MainWindow(QMainWindow):
         if not ok:
             return
         selected_id = chosen.split("(")[-1].rstrip(")")
-        grocery_id = self._editor_service.regenerate_grocery_list_snapshot(selected_id)
+        grocery_id, grocery_warnings = self._editor_service.regenerate_grocery_list_snapshot(selected_id)
         self._current_grocery_list_id = grocery_id
         items = self._editor_service.list_grocery_list_items(grocery_id)
         lines = []
@@ -493,7 +500,10 @@ class MainWindow(QMainWindow):
             qty = "" if item["quantity_value"] is None else str(item["quantity_value"])
             unit = item["unit"] or ""
             lines.append(f"- {item['name']} {qty} {unit}".strip())
-        QMessageBox.information(self, "Grocery List", "\n".join(lines) if lines else "No items generated.")
+        body = "\n".join(lines) if lines else "No items generated."
+        if grocery_warnings:
+            body += "\n\nNotes:\n" + "\n".join(grocery_warnings)
+        QMessageBox.information(self, "Grocery List", body)
 
     def _on_generate_grocery_week(self) -> None:
         plans = self._editor_service.list_meal_plans()
@@ -508,9 +518,12 @@ class MainWindow(QMainWindow):
         week_start, ok_date = QInputDialog.getText(self, "Week Start", "Week start date (YYYY-MM-DD)")
         if not ok_date or not week_start.strip():
             return
-        grocery_id = self._editor_service.generate_weekly_grocery_snapshot(selected_id, week_start.strip())
+        grocery_id, grocery_warnings = self._editor_service.generate_weekly_grocery_snapshot(selected_id, week_start.strip())
         self._current_grocery_list_id = grocery_id
-        QMessageBox.information(self, "Grocery", "Weekly grocery snapshot generated.")
+        msg = "Weekly grocery snapshot generated."
+        if grocery_warnings:
+            msg += "\n\nNotes:\n" + "\n".join(grocery_warnings)
+        QMessageBox.information(self, "Grocery", msg)
 
     def _on_generate_grocery_range(self) -> None:
         plans = self._editor_service.list_meal_plans()
@@ -528,13 +541,16 @@ class MainWindow(QMainWindow):
         end_date, ok_end = QInputDialog.getText(self, "End Date", "End YYYY-MM-DD")
         if not ok_end:
             return
-        grocery_id = self._editor_service.generate_grocery_list_from_meal_plan(
+        grocery_id, grocery_warnings = self._editor_service.generate_grocery_list_from_meal_plan(
             selected_id,
             start_date=(start_date.strip() or None),
             end_date=(end_date.strip() or None),
         )
         self._current_grocery_list_id = grocery_id
-        QMessageBox.information(self, "Grocery", "Date-range grocery snapshot generated.")
+        msg = "Date-range grocery snapshot generated."
+        if grocery_warnings:
+            msg += "\n\nNotes:\n" + "\n".join(grocery_warnings)
+        QMessageBox.information(self, "Grocery", msg)
 
     def _on_view_grocery(self) -> None:
         if self._current_grocery_list_id is None:

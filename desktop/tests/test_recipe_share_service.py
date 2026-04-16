@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
-from desktop.app.domain.models import Recipe
+from desktop.app.domain.models import Recipe, RecipeIngredientItem
 from desktop.app.persistence.database import Database
 from desktop.app.persistence.recipe_repository import RecipeRepository
 from desktop.app.services.recipe_share_service import USER_FACING_SHARE_MEDIA_BLOCKED, RecipeShareService
@@ -109,5 +110,129 @@ def test_import_validation_failure(tmp_path: Path) -> None:
         result = service.import_package(package)
         assert result.imported_count == 0
         assert result.errors
+    finally:
+        db.close()
+
+
+def test_export_includes_transitive_sub_recipes(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    db = Database(tmp_path / "closure.db")
+    try:
+        repo = RecipeRepository(db.conn)
+        base_id, parent_id = str(uuid4()), str(uuid4())
+        now = "2026-04-15T12:00:00Z"
+        base = Recipe(
+            id=base_id,
+            scope="local",
+            title="Sauce",
+            status="published",
+            created_at=now,
+            updated_at=now,
+            equipment=[],
+            ingredients=[
+                RecipeIngredientItem(
+                    id=str(uuid4()),
+                    raw_text="1 cup milk",
+                    is_optional=False,
+                    display_order=0,
+                    quantity_value=1.0,
+                    unit="cup",
+                    ingredient_name="milk",
+                )
+            ],
+            steps=[],
+        )
+        parent = Recipe(
+            id=parent_id,
+            scope="local",
+            title="Main",
+            status="published",
+            created_at=now,
+            updated_at=now,
+            equipment=[],
+            ingredients=[
+                RecipeIngredientItem(
+                    id=str(uuid4()),
+                    raw_text="Uses 1× Sauce",
+                    is_optional=False,
+                    display_order=0,
+                    sub_recipe_id=base_id,
+                    sub_recipe_usage_type="full_batch",
+                    sub_recipe_display_name="Sauce",
+                )
+            ],
+            steps=[],
+        )
+        repo.create_recipe(base)
+        repo.create_recipe(parent)
+        service = RecipeShareService(repo, root)
+        out = tmp_path / "closure.json"
+        result = service.export_recipes([parent_id], out)
+        assert result.recipe_count == 2
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        ids = {r["id"] for r in payload["recipes"]}
+        assert ids == {base_id, parent_id}
+    finally:
+        db.close()
+
+
+def test_import_rejects_orphan_sub_recipe_reference(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    db = Database(tmp_path / "orphan.db")
+    try:
+        repo = RecipeRepository(db.conn)
+        service = RecipeShareService(repo, root)
+        missing = str(uuid4())
+        sample = json.loads((root / "shared" / "samples" / "sample_recipe.json").read_text(encoding="utf-8"))
+        rid, iid, sid = str(uuid4()), str(uuid4()), str(uuid4())
+        sample["id"] = rid
+        sample["ingredients"] = [
+            {
+                "id": iid,
+                "raw_text": "Uses missing sub-recipe",
+                "quantity_value": None,
+                "quantity_text": None,
+                "unit": None,
+                "ingredient_name": None,
+                "preparation_notes": None,
+                "substitutions": None,
+                "affiliate_url": None,
+                "recommended_product": None,
+                "media_id": None,
+                "is_optional": False,
+                "display_order": 0,
+                "catalog_ingredient_id": None,
+                "sub_recipe_id": missing,
+                "sub_recipe_usage_type": "full_batch",
+                "sub_recipe_multiplier": None,
+                "sub_recipe_display_name": "Ghost",
+            }
+        ]
+        sample["steps"] = [
+            {
+                "id": sid,
+                "title": "Do",
+                "body_text": "Prepare.",
+                "display_order": 0,
+                "step_type": "instruction",
+                "estimated_seconds": None,
+                "media_id": None,
+                "timers": [],
+            }
+        ]
+        sample["step_links"] = []
+        bad = {
+            "share_format_version": 1,
+            "package_id": str(uuid4()),
+            "exported_at_utc": "2026-04-15T12:00:00Z",
+            "source_app": "test",
+            "media_included": False,
+            "recipes": [sample],
+        }
+        path = tmp_path / "bad.json"
+        path.write_text(json.dumps(bad), encoding="utf-8")
+        result = service.import_package(path)
+        assert result.imported_count == 0
+        assert any("not included in this share package" in e for e in result.errors)
     finally:
         db.close()

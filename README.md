@@ -14,10 +14,12 @@ The project is built around durable foundations:
 - modular architecture boundaries
 - safe sync behavior with inspectable logs
 
+**Recent capability (sub-recipes):** a recipe ingredient line can reference another **local** recipe (`full_batch` or `fraction_of_batch` with a numeric multiplier). Grocery generation expands those references recursively (cycle-safe, depth-capped); share export includes transitive dependencies. Details: `docs/03_DATA_MODEL.md`, `docs/07_CONTENT_PACKAGING.md`, `CONTEXT.md`. **Desktop SQLite v13** / **mobile `schemaVersion` 13**.
+
 ## Repository Map
 
 - `CONTEXT.md`: high-signal engineering overview for contributors and AI agents (stack, phases, sync entities, refinement work).
-- `docs/`: product + architecture + data + sync + roadmap decisions.
+- `docs/`: product + architecture + data + sync + roadmap decisions (`docs/10_IDEA_BACKLOG.md` for future-direction idea bank).
 - `shared/`: versioned contracts and schema assets used across desktop/mobile/tools.
 - `bundled_content/`: app-shipped content package + manifest.
 - `tools/`: validation, export, seed, and sync diagnostics scripts.

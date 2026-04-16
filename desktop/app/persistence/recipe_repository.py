@@ -18,6 +18,10 @@ from desktop.app.domain.models import (
 )
 
 
+def _normalize_catalog_ingredient_name(name: str) -> str:
+    return " ".join(name.strip().lower().split())
+
+
 class RecipeRepository:
     def __init__(self, conn: sqlite3.Connection):
         self._conn = conn
@@ -740,6 +744,7 @@ class RecipeRepository:
                 "step_link": ("step_links", "step_id", self._upsert_link),
                 "step_timer": ("step_timers", "step_id", self._upsert_timer),
                 "global_equipment": ("global_equipment", "id", self._upsert_global_equipment),
+                "catalog_ingredient": ("catalog_ingredient", "id", self._upsert_catalog_ingredient),
                 "tag": ("tags", "id", self._upsert_tag),
                 "collection": ("collections", "id", self._upsert_collection),
                 "collection_item": ("collection_items", "id", self._upsert_collection_item),
@@ -766,6 +771,7 @@ class RecipeRepository:
                 "step_link": "step_links",
                 "step_timer": "step_timers",
                 "global_equipment": "global_equipment",
+                "catalog_ingredient": "catalog_ingredient",
                 "tag": "tags",
                 "collection": "collections",
                 "collection_item": "collection_items",
@@ -795,6 +801,7 @@ class RecipeRepository:
             "step_link": ("step_links", "id"),
             "step_timer": ("step_timers", "id"),
             "global_equipment": ("global_equipment", "id"),
+            "catalog_ingredient": ("catalog_ingredient", "id"),
             "tag": ("tags", "id"),
             "collection": ("collections", "id"),
             "collection_item": ("collection_items", "id"),
@@ -825,6 +832,7 @@ class RecipeRepository:
             ("step_link", "step_links", "id"),
             ("step_timer", "step_timers", "id"),
             ("global_equipment", "global_equipment", "id"),
+            ("catalog_ingredient", "catalog_ingredient", "id"),
             ("tag", "tags", "id"),
             ("collection", "collections", "id"),
             ("collection_item", "collection_items", "id"),
@@ -928,6 +936,51 @@ class RecipeRepository:
             self._upsert_sync_state("global_equipment", ge_id, now, "desktop-local", is_tombstone=False)
         return ge_id
 
+    def catalog_ingredient_id_to_name(self) -> dict[str, str]:
+        return {
+            str(row["id"]): str(row["name"])
+            for row in self._conn.execute("SELECT id, name FROM catalog_ingredient WHERE deleted_at IS NULL").fetchall()
+        }
+
+    def list_catalog_ingredient_for_picker(self) -> list[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT id, name, notes FROM catalog_ingredient WHERE deleted_at IS NULL ORDER BY lower(name)"
+        ).fetchall()
+
+    def search_catalog_ingredients(self, query: str, *, limit: int = 20) -> list[sqlite3.Row]:
+        needle = _normalize_catalog_ingredient_name(query)
+        if not needle:
+            return []
+        like = f"%{needle}%"
+        return self._conn.execute(
+            """
+            SELECT id, name, notes FROM catalog_ingredient
+            WHERE deleted_at IS NULL AND normalized_name LIKE ?
+            ORDER BY lower(name) LIMIT ?
+            """,
+            (like, limit),
+        ).fetchall()
+
+    def create_catalog_ingredient(self, name: str, *, notes: str | None = None) -> str:
+        name = name.strip()
+        if not name:
+            raise ValueError("catalog ingredient name cannot be empty")
+        now = utc_now_iso()
+        cid = str(uuid4())
+        with self._conn:
+            self._upsert_catalog_ingredient(
+                {
+                    "id": cid,
+                    "name": name,
+                    "notes": notes,
+                    "normalized_name": _normalize_catalog_ingredient_name(name),
+                    "created_at": now,
+                },
+                now,
+            )
+            self._upsert_sync_state("catalog_ingredient", cid, now, "desktop-local", is_tombstone=False)
+        return cid
+
     def _replace_children(self, recipe: Recipe, for_update: bool) -> None:
         if for_update:
             self._conn.execute("DELETE FROM step_timers WHERE step_id IN (SELECT id FROM recipe_steps WHERE recipe_id=?)", (recipe.id,))
@@ -971,6 +1024,11 @@ class RecipeRepository:
                     "media_id": item.media_id,
                     "is_optional": item.is_optional,
                     "display_order": item.display_order,
+                    "catalog_ingredient_id": item.catalog_ingredient_id,
+                    "sub_recipe_id": item.sub_recipe_id,
+                    "sub_recipe_usage_type": item.sub_recipe_usage_type,
+                    "sub_recipe_multiplier": item.sub_recipe_multiplier,
+                    "sub_recipe_display_name": item.sub_recipe_display_name,
                 },
                 recipe.updated_at,
             )
@@ -1078,6 +1136,11 @@ class RecipeRepository:
                     affiliate_url=row["affiliate_url"],
                     recommended_product=row["recommended_product"],
                     media_id=row["media_id"],
+                    catalog_ingredient_id=row["catalog_ingredient_id"] if row["catalog_ingredient_id"] else None,
+                    sub_recipe_id=row["sub_recipe_id"] if row["sub_recipe_id"] else None,
+                    sub_recipe_usage_type=row["sub_recipe_usage_type"] if row["sub_recipe_usage_type"] else None,
+                    sub_recipe_multiplier=float(row["sub_recipe_multiplier"]) if row["sub_recipe_multiplier"] is not None else None,
+                    sub_recipe_display_name=row["sub_recipe_display_name"] if row["sub_recipe_display_name"] else None,
                 )
                 for row in ingredient_rows
             ],
@@ -1195,14 +1258,19 @@ class RecipeRepository:
             INSERT INTO recipe_ingredients(
               id, recipe_id, raw_text, quantity_value, quantity_text, unit, ingredient_name, preparation_notes,
               substitutions, affiliate_url, recommended_product, media_id, is_optional, display_order,
+              catalog_ingredient_id,
+              sub_recipe_id, sub_recipe_usage_type, sub_recipe_multiplier, sub_recipe_display_name,
               entity_version, created_at, updated_at, deleted_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)
             ON CONFLICT(id) DO UPDATE SET
               recipe_id=excluded.recipe_id, raw_text=excluded.raw_text, quantity_value=excluded.quantity_value,
               quantity_text=excluded.quantity_text, unit=excluded.unit, ingredient_name=excluded.ingredient_name,
               preparation_notes=excluded.preparation_notes, substitutions=excluded.substitutions,
               affiliate_url=excluded.affiliate_url, recommended_product=excluded.recommended_product,
               media_id=excluded.media_id, is_optional=excluded.is_optional, display_order=excluded.display_order,
+              catalog_ingredient_id=excluded.catalog_ingredient_id,
+              sub_recipe_id=excluded.sub_recipe_id, sub_recipe_usage_type=excluded.sub_recipe_usage_type,
+              sub_recipe_multiplier=excluded.sub_recipe_multiplier, sub_recipe_display_name=excluded.sub_recipe_display_name,
               entity_version=recipe_ingredients.entity_version+1, updated_at=excluded.updated_at, deleted_at=NULL
             """,
             (
@@ -1220,6 +1288,11 @@ class RecipeRepository:
                 body.get("media_id"),
                 int(body["is_optional"]),
                 body["display_order"],
+                body.get("catalog_ingredient_id"),
+                body.get("sub_recipe_id"),
+                body.get("sub_recipe_usage_type"),
+                body.get("sub_recipe_multiplier"),
+                body.get("sub_recipe_display_name"),
                 updated_at_utc,
                 updated_at_utc,
             ),
@@ -1321,6 +1394,32 @@ class RecipeRepository:
                 body["name"],
                 body.get("notes"),
                 body.get("media_id"),
+                body.get("created_at", updated_at_utc),
+                updated_at_utc,
+            ),
+        )
+
+    def _upsert_catalog_ingredient(self, body: dict, updated_at_utc: str) -> None:
+        name = body["name"]
+        normalized = body.get("normalized_name") or _normalize_catalog_ingredient_name(name)
+        self._conn.execute(
+            """
+            INSERT INTO catalog_ingredient(
+              id, name, normalized_name, notes, entity_version, created_at, updated_at, deleted_at
+            ) VALUES (?, ?, ?, ?, 1, ?, ?, NULL)
+            ON CONFLICT(id) DO UPDATE SET
+              name=excluded.name,
+              normalized_name=excluded.normalized_name,
+              notes=excluded.notes,
+              entity_version=catalog_ingredient.entity_version+1,
+              updated_at=excluded.updated_at,
+              deleted_at=NULL
+            """,
+            (
+                body["id"],
+                name,
+                normalized,
+                body.get("notes"),
                 body.get("created_at", updated_at_utc),
                 updated_at_utc,
             ),
@@ -1600,6 +1699,7 @@ class RecipeRepository:
             "step_link": ("step_links",),
             "step_timer": ("step_timers",),
             "global_equipment": ("global_equipment",),
+            "catalog_ingredient": ("catalog_ingredient",),
             "tag": ("tags",),
             "collection": ("collections",),
             "collection_item": ("collection_items",),

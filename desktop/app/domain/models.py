@@ -9,6 +9,7 @@ from uuid import UUID
 
 
 RecipeScope = Literal["bundled", "local"]
+SubRecipeUsageType = Literal["full_batch", "fraction_of_batch"]
 RecipeStatus = Literal["draft", "published", "archived"]
 StepType = Literal["instruction", "note", "section_break"]
 LinkTargetType = Literal["ingredient", "equipment"]
@@ -64,6 +65,11 @@ class RecipeIngredientItem:
     affiliate_url: str | None = None
     recommended_product: str | None = None
     media_id: str | None = None
+    catalog_ingredient_id: str | None = None
+    sub_recipe_id: str | None = None
+    sub_recipe_usage_type: SubRecipeUsageType | None = None
+    sub_recipe_multiplier: float | None = None
+    sub_recipe_display_name: str | None = None
 
     def validate(self) -> None:
         _require_uuid(self.id, "ingredient.id")
@@ -73,6 +79,24 @@ class RecipeIngredientItem:
             raise ValueError("ingredient.display_order must be >= 0")
         if self.quantity_value is not None and self.quantity_value < 0:
             raise ValueError("ingredient.quantity_value must be >= 0")
+        if self.catalog_ingredient_id is not None:
+            _require_uuid(self.catalog_ingredient_id, "ingredient.catalog_ingredient_id")
+        if self.sub_recipe_id is not None:
+            if self.catalog_ingredient_id is not None:
+                raise ValueError("ingredient cannot set both catalog_ingredient_id and sub_recipe_id")
+            _require_uuid(self.sub_recipe_id, "ingredient.sub_recipe_id")
+            if self.sub_recipe_usage_type not in ("full_batch", "fraction_of_batch"):
+                raise ValueError("ingredient.sub_recipe_usage_type must be full_batch or fraction_of_batch")
+            if self.sub_recipe_usage_type == "fraction_of_batch":
+                if self.sub_recipe_multiplier is None or self.sub_recipe_multiplier <= 0:
+                    raise ValueError("ingredient.sub_recipe_multiplier must be > 0 for fraction_of_batch")
+        else:
+            if self.sub_recipe_usage_type is not None:
+                raise ValueError("ingredient.sub_recipe_usage_type requires sub_recipe_id")
+            if self.sub_recipe_multiplier is not None:
+                raise ValueError("ingredient.sub_recipe_multiplier requires sub_recipe_id")
+            if self.sub_recipe_display_name is not None:
+                raise ValueError("ingredient.sub_recipe_display_name requires sub_recipe_id")
 
 
 @dataclass(slots=True)
@@ -221,6 +245,8 @@ class Recipe:
             item.validate()
         for item in self.ingredients:
             item.validate()
+            if item.sub_recipe_id == self.id:
+                raise ValueError("recipe cannot reference itself as a sub-recipe ingredient")
         for step in self.steps:
             step.validate()
         for link in self.step_links:
@@ -255,7 +281,29 @@ class Recipe:
                 )
                 for item in payload.get("equipment", [])
             ],
-            ingredients=[RecipeIngredientItem(**item) for item in payload.get("ingredients", [])],
+            ingredients=[
+                RecipeIngredientItem(
+                    id=i["id"],
+                    raw_text=i["raw_text"],
+                    is_optional=i["is_optional"],
+                    display_order=i["display_order"],
+                    quantity_value=i.get("quantity_value"),
+                    quantity_text=i.get("quantity_text"),
+                    unit=i.get("unit"),
+                    ingredient_name=i.get("ingredient_name"),
+                    preparation_notes=i.get("preparation_notes"),
+                    substitutions=i.get("substitutions"),
+                    affiliate_url=i.get("affiliate_url"),
+                    recommended_product=i.get("recommended_product"),
+                    media_id=i.get("media_id"),
+                    catalog_ingredient_id=i.get("catalog_ingredient_id"),
+                    sub_recipe_id=i.get("sub_recipe_id"),
+                    sub_recipe_usage_type=i.get("sub_recipe_usage_type"),
+                    sub_recipe_multiplier=i.get("sub_recipe_multiplier"),
+                    sub_recipe_display_name=i.get("sub_recipe_display_name"),
+                )
+                for i in payload.get("ingredients", [])
+            ],
             steps=[
                 RecipeStep(
                     **{

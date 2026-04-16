@@ -1,6 +1,56 @@
 # Roadmap
 
-## Phase 0 - Foundation (Current)
+## How to read this document
+
+- **Dependency order matters**: prefer work that **unlocks later features** and **avoids rework** (stable IDs, migrations, sync entity registration, mobile/desktop parity).
+- **Idea bank**: exploratory and future directions live in `docs/10_IDEA_BACKLOG.md` so they are not lost; not every item is scheduled here.
+- **Naming**: the repo/product is **Genesis** in code; **Recipe Forge** appears in some product language — same system.
+- **Long-term horizon**: recipes stay the primary concept; architecture should remain compatible with broader **procedural knowledge** later **without** renaming core types prematurely (`10_IDEA_BACKLOG.md`).
+
+## Current platform state (high level)
+
+**Stable today**
+
+- Dual app: **desktop** (Python, PySide6, SQLite, LAN sync host) and **mobile** (Flutter, SQLite, sync client).
+- **Recipe graph**: metadata, equipment, ingredients, steps, links, timers, media metadata, scoped bundled vs local.
+- **Meal planning, scheduling, grocery** snapshots with manual edit safety and regeneration semantics.
+- **Search, collections, working set**, favorites / recent / cooked memory, home surfaces.
+- **Sync**: versioned protocol, entity-level push/pull, conflict logging, many entity types on wire.
+- **Share packages** (desktop file path), **backup/restore**, **diagnostics**, **release readiness** tooling.
+- **Desktop DB** schema **v13**: adds **sub-recipe columns** on `recipe_ingredients` (plus **v12** catalog ingredient link, **v11** global equipment, tags, vibrate, etc.).
+
+**Gaps / alignment in flight**
+
+- (none listed here — next tranche picks up from backlog / polish.)
+
+## Near-term roadmap (dependency-ordered)
+
+1. **Mobile v11 parity (reusable equipment + tags + vibrate)** — **implemented in tree**  
+   Align SQLite + repository + sync apply/push + authoring UX with desktop refinement phase. *Unlocks consistent sync and establishes patterns for catalog entities.* Verify on-device against desktop host after upgrading an existing mobile DB.
+
+2. **Ingredient catalog (groundwork)** — **in progress / shipped in tree**  
+   Optional `catalog_ingredient` with `name` + normalized matching + optional `notes`; nullable `recipe_ingredients.catalog_ingredient_id`; sync entity `catalog_ingredient`; desktop + mobile lightweight pick/suggest/save UX — **no** nutrition, units overhaul, or forced catalog usage. *Builds on v11 reuse patterns.*
+
+3. **Organization polish**  
+   **Search + tag filtering stretch (in tree):** library search uses the **ingredient catalog** (linked names) plus raw lines, tags, and graph text; tag **match-all** filters on desktop and mobile; optional **ingredient-focused** filter; subtle match hints in results. **Still no** deep folders, recommendations, or heavy search UI.
+
+## Mid-term roadmap
+
+- **Sub-recipe / composable recipes** — **first slice shipped in tree**: explicit `full_batch` / `fraction_of_batch` (+ multiplier), recursive grocery expansion with cycle + depth guards, share closure + atomic import validation, desktop + mobile authoring and recipe-view navigation. **Deferred**: arbitrary unit conversion, “N cups of sub-recipe” density math, graph visualization, cross-package share references without bundling.
+- **Share format extensions** for equipment/catalog slices where portable knowledge requires it.
+- **Theme/settings** consolidation and optional color themes (non-semantically-loaded colors only).
+
+## Long-term / conceptual
+
+- **Procedural knowledge** beyond recipes on the same technical base (schemas, sync, packages).
+- **Media at scale** (video, high-res): documented strategy for optional online/streaming; local-first remains default.
+- **Excel / bulk tooling** as a **power-user layer**, not a replacement for core authoring UX.
+
+## Historical delivery log (phases 0–6)
+
+The sections below record **what shipped** in earlier phase numbering. They are retained for continuity.
+
+## Phase 0 - Foundation (completed)
 
 - finalize architecture docs and boundaries
 - create monorepo scaffold
