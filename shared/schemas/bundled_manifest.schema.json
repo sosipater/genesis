@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://recipeforge.local/schemas/bundled_manifest.schema.json",
+  "title": "BundledContentManifest",
+  "type": "object",
+  "required": [
+    "manifest_version",
+    "app_content_version",
+    "generated_at_utc",
+    "bundled_recipes",
+    "checksums"
+  ],
+  "properties": {
+    "manifest_version": { "type": "integer", "minimum": 1 },
+    "app_content_version": { "type": "string", "minLength": 1 },
+    "generated_at_utc": { "type": "string", "format": "date-time" },
+    "bundled_recipes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/bundledRecipeEntry" }
+    },
+    "checksums": {
+      "type": "object",
+      "patternProperties": {
+        "^[^\\s]+$": { "type": "string", "minLength": 32 }
+      },
+      "additionalProperties": false
+    },
+    "migration_notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "bundledRecipeEntry": {
+      "type": "object",
+      "required": ["id", "version", "file", "checksum_sha256"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "version": { "type": "integer", "minimum": 1 },
+        "file": { "type": "string", "pattern": "^recipes/.+\\.json$" },
+        "checksum_sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$" },
+        "title_snapshot": { "type": ["string", "null"] },
+        "source_local_recipe_id": { "type": ["string", "null"], "format": "uuid" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

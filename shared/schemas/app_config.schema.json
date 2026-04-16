@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://recipeforge.local/schemas/app_config.schema.json",
+  "title": "AppConfig",
+  "type": "object",
+  "required": ["config_version", "ui", "sync", "logging", "content_paths", "feature_toggles"],
+  "properties": {
+    "config_version": { "type": "integer", "minimum": 1 },
+    "ui": {
+      "type": "object",
+      "required": ["section_labels", "dark_mode_default"],
+      "properties": {
+        "section_labels": {
+          "type": "object",
+          "required": ["equipment", "ingredients", "steps"],
+          "properties": {
+            "equipment": { "type": "string", "minLength": 1 },
+            "ingredients": { "type": "string", "minLength": 1 },
+            "steps": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
+        "dark_mode_default": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "sync": {
+      "type": "object",
+      "required": ["protocol_version", "desktop_host_default", "request_timeout_seconds", "max_retry_attempts"],
+      "properties": {
+        "protocol_version": { "type": "integer", "minimum": 1 },
+        "desktop_host_default": { "type": "string", "minLength": 1 },
+        "request_timeout_seconds": { "type": "integer", "minimum": 1 },
+        "max_retry_attempts": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "logging": {
+      "type": "object",
+      "required": ["level", "file_enabled"],
+      "properties": {
+        "level": { "type": "string", "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] },
+        "file_enabled": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "content_paths": {
+      "type": "object",
+      "required": ["bundled_manifest_path"],
+      "properties": {
+        "bundled_manifest_path": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "feature_toggles": {
+      "type": "object",
+      "required": ["timer_state_sync", "step_media_video"],
+      "properties": {
+        "timer_state_sync": { "type": "boolean" },
+        "step_media_video": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

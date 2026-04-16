@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://recipeforge.local/schemas/sync_envelope.schema.json",
+  "title": "SyncEnvelope",
+  "type": "object",
+  "required": [
+    "sync_protocol_version",
+    "request_id",
+    "session_id",
+    "device_id",
+    "sent_at_utc",
+    "payload"
+  ],
+  "properties": {
+    "sync_protocol_version": { "type": "integer", "minimum": 1 },
+    "request_id": { "type": "string", "format": "uuid" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "device_id": { "type": "string", "minLength": 1 },
+    "sent_at_utc": { "type": "string", "format": "date-time" },
+    "payload": { "$ref": "#/$defs/syncPayload" },
+    "errors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/syncError" },
+      "default": []
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "syncPayload": {
+      "type": "object",
+      "required": ["changes"],
+      "properties": {
+        "since_cursor": { "type": ["string", "null"] },
+        "next_cursor": { "type": ["string", "null"] },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/entityChange" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "entityChange": {
+      "type": "object",
+      "required": [
+        "entity_type",
+        "entity_id",
+        "op",
+        "entity_version",
+        "updated_at_utc"
+      ],
+      "properties": {
+        "entity_type": {
+          "type": "string",
+          "enum": [
+            "recipe",
+            "recipe_equipment_item",
+            "recipe_ingredient_item",
+            "recipe_step",
+            "step_link",
+            "step_timer",
+            "collection",
+            "collection_item",
+            "meal_plan",
+            "meal_plan_item",
+            "grocery_list",
+            "grocery_list_item",
+            "recipe_user_state",
+            "media_asset",
+            "tag",
+            "recipe_tag"
+          ]
+        },
+        "entity_id": { "type": "string", "format": "uuid" },
+        "op": { "type": "string", "enum": ["upsert", "delete"] },
+        "entity_version": { "type": "integer", "minimum": 1 },
+        "updated_at_utc": { "type": "string", "format": "date-time" },
+        "body": { "type": ["object", "null"] },
+        "source_scope": { "type": "string", "enum": ["local"], "default": "local" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "op": { "const": "delete" } } },
+          "then": { "properties": { "body": { "type": "null" } } }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "syncError": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "entity_type": { "type": ["string", "null"] },
+        "entity_id": { "type": ["string", "null"] },
+        "retryable": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    }
+  }
+}

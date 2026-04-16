@@ -1,0 +1,24 @@
+Recipe Forge Handoff Notes
+
+Current baseline:
+- Architecture, data model, sync protocol, packaging strategy, UX guidance, diagnostics, test strategy, and roadmap docs are present in `docs/`.
+- Shared JSON schemas exist under `shared/schemas`.
+- Validation tools exist under `tools/`.
+
+Immediate next engineering tasks:
+1) Implement desktop domain entities + SQLite migrations.
+2) Implement desktop sync host endpoints with schema-validated payloads.
+3) Create Flutter mobile shell with section-tab recipe view and sync client skeleton.
+4) Add contract fixtures under `tests/contracts`.
+
+Risk checkpoints:
+- Do not conflate bundled and local recipe IDs.
+- Ensure sync conflict metadata is persisted and visible.
+- Ensure timers persist state outside view/controller lifecycle.
+
+Definition of done for foundation:
+- schema validators pass
+- bundled manifest validator passes
+- sample sync envelope validates
+- docs reflect actual code structure
+

@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+*.egg-info/
+dist/
+build/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Secrets / local overrides.env
+.env.*
+*.local.json
+
+# Flutter & Dart (monorepo paths)
+**/doc/api/
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/build/
+**/coverage/
+**/ios/Flutter/.last_build_id
+
+# Logs
+*.log
+
+# Local desktop SQLite (dev / accidental); runtime DB lives under %APPDATA%
+desktop/data/*.db
+desktop/tests/tmp_*.db

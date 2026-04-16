@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "123e4567-e89b-12d3-a456-426614174001",
+  "scope": "local",
+  "bundled_content_version": null,
+  "bundle_export_eligible": false,
+  "title": "Weeknight Tomato Pasta",
+  "subtitle": "Fast stovetop dinner",
+  "author": "Recipe Forge Team",
+  "source_name": "Internal",
+  "source_url": null,
+  "tags": ["pasta", "weeknight"],
+  "category": "Dinner",
+  "difficulty": "easy",
+  "servings": 2,
+  "prep_minutes": 10,
+  "cook_minutes": 15,
+  "total_minutes": 25,
+  "notes": "Taste and adjust salt before serving.",
+  "cover_media_id": null,
+  "display_settings": {},
+  "status": "draft",
+  "created_at": "2026-04-15T00:00:00Z",
+  "updated_at": "2026-04-15T00:00:00Z",
+  "deleted_at": null,
+  "equipment": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174010",
+      "name": "Large pot",
+      "description": "For boiling pasta.",
+      "why_used": null,
+      "is_required": true,
+      "notes": null,
+      "affiliate_url": null,
+      "alternate_equipment_text": null,
+      "media_id": null,
+      "display_order": 0
+    }
+  ],
+  "ingredients": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174020",
+      "raw_text": "8 oz spaghetti",
+      "quantity_value": 8,
+      "quantity_text": null,
+      "unit": "oz",
+      "ingredient_name": "spaghetti",
+      "preparation_notes": null,
+      "substitutions": null,
+      "affiliate_url": null,
+      "recommended_product": null,
+      "media_id": null,
+      "is_optional": false,
+      "display_order": 0
+    }
+  ],
+  "steps": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174030",
+      "title": "Boil pasta",
+      "body_text": "Boil [[ingredient:spaghetti]] in salted water until al dente.",
+      "display_order": 0,
+      "step_type": "instruction",
+      "estimated_seconds": 600,
+      "media_id": null,
+      "timers": [
+        {
+          "id": "123e4567-e89b-12d3-a456-426614174031",
+          "label": "Pasta boil",
+          "duration_seconds": 600,
+          "auto_start": false,
+          "alert_sound_key": null
+        }
+      ]
+    }
+  ],
+  "step_links": [
+    {
+      "id": "123e4567-e89b-12d3-a456-426614174040",
+      "step_id": "123e4567-e89b-12d3-a456-426614174030",
+      "target_type": "ingredient",
+      "target_id": "123e4567-e89b-12d3-a456-426614174020",
+      "token_key": "spaghetti",
+      "label_snapshot": "spaghetti",
+      "label_override": null
+    }
+  ]
+}

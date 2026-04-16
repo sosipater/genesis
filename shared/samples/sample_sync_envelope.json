@@ -1,0 +1,25 @@
+{
+  "sync_protocol_version": 1,
+  "request_id": "123e4567-e89b-12d3-a456-426614174100",
+  "session_id": "desktop-mobile-session-1",
+  "device_id": "android-pixel-01",
+  "sent_at_utc": "2026-04-15T00:00:00Z",
+  "payload": {
+    "since_cursor": null,
+    "next_cursor": "cursor_0002",
+    "changes": [
+      {
+        "entity_type": "recipe",
+        "entity_id": "123e4567-e89b-12d3-a456-426614174001",
+        "op": "upsert",
+        "entity_version": 1,
+        "updated_at_utc": "2026-04-15T00:00:00Z",
+        "body": {
+          "title": "Weeknight Tomato Pasta"
+        },
+        "source_scope": "local"
+      }
+    ]
+  },
+  "errors": []
+}

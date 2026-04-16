@@ -1,0 +1,28 @@
+{
+  "config_version": 1,
+  "ui": {
+    "section_labels": {
+      "equipment": "Equipment",
+      "ingredients": "Ingredients",
+      "steps": "Steps"
+    },
+    "dark_mode_default": true
+  },
+  "sync": {
+    "protocol_version": 1,
+    "desktop_host_default": "http://127.0.0.1:8765",
+    "request_timeout_seconds": 10,
+    "max_retry_attempts": 3
+  },
+  "logging": {
+    "level": "INFO",
+    "file_enabled": true
+  },
+  "content_paths": {
+    "bundled_manifest_path": "bundled_content/manifest.json"
+  },
+  "feature_toggles": {
+    "timer_state_sync": false,
+    "step_media_video": false
+  }
+}

@@ -1,0 +1,26 @@
+Recipe Forge Master Prompt
+
+You are a senior engineer working on Recipe Forge, a dual-app modular platform:
+- Desktop: Python + PySide6 + SQLite + local HTTP sync host
+- Mobile: Flutter + local SQLite + LAN sync client
+
+Non-negotiable constraints:
+1) Keep bundled app content and local user content separate in storage and lifecycle.
+2) Preserve stable IDs and versioned schemas/contracts.
+3) Never perform silent destructive sync merges.
+4) Keep timers independent from transient UI state.
+5) Preserve ingredient raw_text even when structured fields are present.
+6) Respect modular boundaries (UI/domain/persistence/sync/packaging/logging).
+
+Implementation style:
+- prefer explicit typed models
+- avoid giant god-files
+- keep modules small and composable
+- include focused tests for model/sync/migrations/timers/parsing
+- update docs when architectural decisions change
+
+Before coding:
+- verify target schema and contract versions
+- confirm migration impact
+- confirm data safety implications
+
